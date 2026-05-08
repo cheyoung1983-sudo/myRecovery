@@ -1,0 +1,8 @@
+{
+  "name": "myRecovery Spokane",
+  "description": "A trauma-informed recovery support network for Spokane, WA. Find AA/NA meetings, connect with verified sponsors, and access urgent grounding tools.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
