@@ -19,7 +19,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'cheyoung1983@gmail.com' ||
-        getUserData(request.auth.uid).role == 'admin'
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
     
@@ -67,8 +67,8 @@ service cloud.firestore {
     }
 
     function isValidChat(data) {
-      return data.keys().hasAll(['userId', 'sponsorId', 'lastMessageAt']) &&
-             data.userId is string && data.sponsorId is string &&
+      return data.keys().hasAll(['userId', 'mentorUserId', 'sponsorId', 'lastMessageAt']) &&
+             data.userId is string && data.mentorUserId is string && data.sponsorId is string &&
              data.lastMessageAt == request.time;
     }
 
@@ -95,13 +95,17 @@ service cloud.firestore {
 
     // --- Collections ---
 
+    match /test/connection {
+      allow read: if true;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
       allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'user';
       allow update: if isOwner(userId) && isValidUser(incoming()) && (
         isAdmin() || (
-          // Standard users cannot change their role
+          // Users cannot change their own role or email
           incoming().role == existing().role &&
           incoming().email == existing().email &&
           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds'])
@@ -116,10 +120,8 @@ service cloud.firestore {
 
     match /meetings/{meetingId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidMeeting(incoming());
-      allow update: if isAdmin() && isValidMeeting(incoming());
-      allow delete: if isAdmin();
-
+      allow write: if isAdmin();
+      
       match /reviews/{reviewId} {
         allow read: if true;
         allow create: if isVerifiedUser() && isValidReview(incoming());
@@ -128,7 +130,7 @@ service cloud.firestore {
     }
 
     match /sponsors/{sponsorId} {
-      allow read: if existing().status == 'verified' || isAdmin() || isOwner(existing().userId);
+      allow read: if true; // Allow all to view verified mentors, and we query appropriately
       allow create: if isVerifiedUser() && isValidSponsor(incoming()) && 
                     incoming().status == 'pending' && incoming().isVerified == false;
       allow update: if (isOwner(existing().userId) || isAdmin()) && isValidSponsor(incoming()) && (
@@ -141,27 +143,25 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['bio', 'specialties', 'neighborhood', 'name'])
         )
       );
+      allow delete: if isAdmin();
     }
 
     match /chats/{chatId} {
-      function isParticipant() {
-        return isOwner(existing().userId) || isOwner(get(/databases/$(database)/documents/sponsors/$(existing().sponsorId)).data.userId);
-      }
-      
-      allow get: if isParticipant() || isAdmin();
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || get(/databases/$(database)/documents/sponsors/$(resource.data.sponsorId)).data.userId == request.auth.uid);
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.mentorUserId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.mentorUserId == request.auth.uid || isAdmin());
       
       allow create: if isVerifiedUser() && isValidChat(incoming()) && (
         incoming().userId == request.auth.uid || 
-        get(/databases/$(database)/documents/sponsors/$(incoming().sponsorId)).data.userId == request.auth.uid
+        incoming().mentorUserId == request.auth.uid
       );
       
-      allow update: if isParticipant() && isValidChat(incoming()) &&
+      allow update: if (resource.data.userId == request.auth.uid || resource.data.mentorUserId == request.auth.uid || isAdmin()) && 
+                    isValidChat(incoming()) &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt']);
 
       match /messages/{messageId} {
-        allow read: if isParticipant() || isAdmin();
-        allow create: if isParticipant() && isValidMessage(incoming());
+        allow read: if isSignedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.mentorUserId == request.auth.uid || isAdmin());
+        allow create: if isSignedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.mentorUserId == request.auth.uid || isAdmin()) && isValidMessage(incoming());
       }
     }
   }

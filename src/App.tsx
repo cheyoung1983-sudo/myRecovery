@@ -29,7 +29,7 @@ import {
 import { 
   doc, setDoc, onSnapshot, collection, query, where, orderBy, 
   serverTimestamp, updateDoc, addDoc, getDoc, getDocs, deleteDoc,
-  Timestamp 
+  Timestamp, or
 } from 'firebase/firestore';
 
 import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession } from './types';
@@ -726,8 +726,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-
-  const isSuperAdmin = useMemo(() => currentUser?.email === SUPER_ADMIN_EMAIL, [currentUser]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
@@ -768,6 +767,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
+        setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
         const userDoc = await getDoc(userDocRef);
         if (!userDoc.exists()) {
@@ -781,11 +781,15 @@ export default function App() {
           };
           await setDoc(userDocRef, profile);
           setUserProfile(profile);
+          if (profile.role === 'admin') setIsSuperAdmin(true);
         } else {
-          setUserProfile(userDoc.data());
+          const data = userDoc.data();
+          setUserProfile(data);
+          if (data.role === 'admin') setIsSuperAdmin(true);
         }
       } else {
         setUserProfile(null);
+        setIsSuperAdmin(false);
       }
       setIsAuthLoading(false);
     });
@@ -802,51 +806,49 @@ export default function App() {
         setUserProfile(data);
         setSobrietyDate(data.sobrietyDate || new Date().toISOString().split('T')[0]);
         setUserNeeds(data.recoveryNeeds || []);
+        
+        // Safety check for super admin status
+        if (data.role === 'admin' && !isSuperAdmin) {
+          setIsSuperAdmin(true);
+        }
       }
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`));
 
     // Sync Meetings
     const unsubMeetings = onSnapshot(collection(db, 'meetings'), (snap) => {
       const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-      if (docs.length === 0 && isSuperAdmin) {
-        // Seed meetings if empty and is admin
-        INITIAL_MEETINGS.forEach(m => {
-          const { id, ...rest } = m;
-          addDoc(collection(db, 'meetings'), rest);
-        });
-      }
       setMeetings(docs);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'meetings'));
 
     // Sync Sponsors
-    const unsubSponsors = onSnapshot(collection(db, 'sponsors'), (snap) => {
+    const sponsorsQuery = isSuperAdmin 
+      ? collection(db, 'sponsors') 
+      : query(collection(db, 'sponsors'), or(where('status', '==', 'verified'), where('userId', '==', currentUser.uid)));
+      
+    const unsubSponsors = onSnapshot(sponsorsQuery, (snap) => {
       const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-      if (docs.length === 0 && isSuperAdmin) {
-        // Seed sponsors
-        INITIAL_SPONSORS.forEach(s => {
-          const { id, ...rest } = s;
-          addDoc(collection(db, 'sponsors'), { ...rest, userId: currentUser.uid });
-        });
-      }
       setSponsors(docs);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'sponsors'));
 
     // Sync Attendance
     const unsubAttendance = onSnapshot(
       query(collection(db, 'users', currentUser.uid, 'attendance'), orderBy('date', 'desc')),
       (snap) => {
         setAttendance(snap.docs.map(d => d.data()) as any);
-      }
+      },
+      (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/attendance`)
     );
 
     // Sync Chats (User as Client OR User as Sponsor)
-    const sponsorProfile = sponsors.find(s => s.userId === currentUser.uid);
-    const unsubChats = onSnapshot(collection(db, 'chats'), (snap) => {
-      const allMyChats = snap.docs
-        .map(d => ({ ...d.data(), id: d.id }))
-        .filter((c: any) => c.userId === currentUser.uid || c.sponsorId === sponsorProfile?.id) as any;
+    const chatsQuery = query(
+      collection(db, 'chats'),
+      or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid))
+    );
+    
+    const unsubChats = onSnapshot(chatsQuery, (snap) => {
+      const allMyChats = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
       setChatSessions(allMyChats);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'chats'));
 
     return () => {
       unsubProfile();
@@ -877,7 +879,8 @@ export default function App() {
             timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'
           };
         }));
-      }
+      },
+      (error) => handleFirestoreError(error, OperationType.GET, `chats/${activeChatId}/messages`)
     );
 
     return () => unsubMessages();
@@ -1097,6 +1100,7 @@ export default function App() {
         const newChat = await addDoc(chatsRef, {
           userId: currentUser.uid,
           userName: currentUser.displayName || 'Member',
+          mentorUserId: sponsor.userId,
           sponsorId: String(sponsor.id),
           sponsorName: sponsor.name,
           lastMessageAt: serverTimestamp(),

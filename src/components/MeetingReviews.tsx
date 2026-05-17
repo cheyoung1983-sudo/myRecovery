@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, OperationType, handleFirestoreError } from '../lib/firebase';
 import { Review } from '../types';
 import { Star, Send, Trash2, User, MessageSquare } from 'lucide-react';
 
@@ -28,7 +28,7 @@ export const MeetingReviews: React.FC<MeetingReviewsProps> = ({ meetingId }) => 
       })) as Review[];
       setReviews(revs);
       setLoading(false);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, `meetings/${meetingId}/reviews`));
 
     return () => unsubscribe();
   }, [meetingId]);

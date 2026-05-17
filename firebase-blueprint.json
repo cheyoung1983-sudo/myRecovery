@@ -62,10 +62,11 @@
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
+        "mentorUserId": { "type": "string" },
         "sponsorId": { "type": "string" },
         "lastMessageAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "sponsorId", "lastMessageAt"]
+      "required": ["userId", "mentorUserId", "sponsorId", "lastMessageAt"]
     },
     "Message": {
       "title": "Chat Message",
