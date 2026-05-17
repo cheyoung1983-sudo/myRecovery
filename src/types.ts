@@ -42,8 +42,13 @@ export interface Message {
 export interface ChatSession {
   id: string;
   userId: string;
+  mentorUserId: string; 
   sponsorId: string;
-  lastMessageAt: any; // serverTimestamp or Date
+  lastMessageAt: any;
+  lastRead?: Record<string, any>;
+  typingStatus?: Record<string, boolean>;
+  userName?: string;
+  mentorName?: string;
 }
 
 export interface Review {
@@ -53,4 +58,34 @@ export interface Review {
   rating: number;
   comment: string;
   timestamp: any;
+}
+
+export interface Resource {
+  id: string;
+  name: string;
+  category: 'Detox' | 'Outpatient' | 'Sober Living' | 'Inpatient' | 'Support';
+  address: string;
+  phone: string;
+  website: string;
+  description: string;
+  neighborhood: string;
+}
+
+export interface MentorReview {
+  id: string;
+  mentorId: string;
+  userId: string;
+  rating: number;
+  comment: string;
+  timestamp: any;
+}
+
+export interface UserProfile {
+  email: string;
+  name: string;
+  photoURL: string;
+  sobrietyDate: string;
+  recoveryNeeds: string[];
+  neighborhood?: string;
+  role: 'user' | 'mentor' | 'admin';
 }

@@ -1,34 +1,143 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Sponsor } from '../types';
-import { BadgeCheck, X, Check, Clock, User, Award, MapPin } from 'lucide-react';
+import { Sponsor, UserProfile } from '../types';
+import { BadgeCheck, X, Check, Clock, User, Award, MapPin, BarChart3, PieChart as PieIcon, TrendingUp } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
 interface AdminDashboardProps {
   pendingSponsors: Sponsor[];
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  allSponsors: Sponsor[];
+  allUserProfiles: UserProfile[];
 }
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
   pendingSponsors, 
   onApprove, 
-  onReject 
+  onReject,
+  allSponsors,
+  allUserProfiles
 }) => {
+  const needsData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allUserProfiles.forEach(u => {
+      (u.recoveryNeeds || []).forEach(need => {
+        counts[need] = (counts[need] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [allUserProfiles]);
+
+  const mentorStats = useMemo(() => {
+    const verified = allSponsors.filter(s => s.status === 'verified').length;
+    const pending = allSponsors.filter(s => s.status === 'pending').length;
+    return [
+      { name: 'Verified', value: verified },
+      { name: 'Pending', value: pending }
+    ];
+  }, [allSponsors]);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-8"
+      className="space-y-12"
       id="admin-dashboard-container"
     >
       <div className="flex items-center justify-between px-1">
         <div>
-          <h2 className="text-3xl font-black text-white italic tracking-tight">Admin Control Panel.</h2>
-          <p className="text-slate-400 text-sm mt-1">Reviewing {pendingSponsors.length} pending mentor applications.</p>
+          <h2 className="text-4xl font-black text-white italic tracking-tighter">Command Center.</h2>
+          <p className="text-slate-400 text-sm mt-1 uppercase font-bold tracking-widest">Spokane Recovery Insights & Oversight</p>
         </div>
-        <div className="bg-amber-500/10 border border-amber-500/30 p-2 rounded-xl text-amber-500">
-           <BadgeCheck size={24} />
+        <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-2xl text-blue-500 flex flex-col items-center">
+           <span className="text-2xl font-black">{allUserProfiles.length}</span>
+           <span className="text-[10px] font-bold uppercase">Members</span>
         </div>
+      </div>
+
+      {/* DASHBOARD GRID */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Needs Distribution */}
+        <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500">
+              <BarChart3 size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white tracking-tight">Community Needs</h3>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-widest leading-none">Popular Recovery Focus Areas</p>
+            </div>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={needsData.slice(0, 5)} layout="vertical">
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  axisLine={false} 
+                  tickLine={false}
+                  tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
+                  width={100}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#1e293b' }}
+                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', fontSize: '12px' }}
+                />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                  {needsData.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Mentor Health */}
+        <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-500">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white tracking-tight">Mentor Network</h3>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-widest leading-none">Status of Spokane Partners</p>
+            </div>
+          </div>
+          <div className="h-64 w-full flex items-center justify-center relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={mentorStats}
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  <Cell fill="#10b981" />
+                  <Cell fill="#f59e0b" />
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute flex flex-col items-center pointer-events-none">
+              <span className="text-3xl font-black text-white">{mentorStats[0].value + mentorStats[1].value}</span>
+              <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Total</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pt-6 pb-2">
+        <Clock size={20} className="text-amber-500" />
+        <h3 className="text-xl font-bold text-white">Pending Approvals</h3>
+        <span className="bg-amber-500/20 text-amber-500 px-3 py-1 rounded-full text-xs font-black">{pendingSponsors.length}</span>
       </div>
 
       {pendingSponsors.length === 0 ? (

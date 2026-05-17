@@ -15,7 +15,7 @@ import {
   Eye, Fingerprint, Volume2, Flower2, Coffee,
   UserCheck, Clock, ShieldCheck, Info, Accessibility,
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
-  LogOut, LogIn, Mail
+  LogOut, LogIn, Mail, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -32,12 +32,17 @@ import {
   Timestamp, or
 } from 'firebase/firestore';
 
-import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession } from './types';
-import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL } from './constants';
+import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile } from './types';
+import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL, SPOKANE_RESOURCES } from './constants';
 import { SponsorApplicationForm } from './components/SponsorApplicationForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MeetingReviews } from './components/MeetingReviews';
+import { MentorReviews } from './components/MentorReviews';
 import { ChatList } from './components/ChatList';
+import { AdBanner } from './components/AdBanner';
+import { NativeAd } from './components/NativeAd';
+import { ProfileOnboarding } from './components/ProfileOnboarding';
+import { useRewardedAd } from './hooks/useRewardedAd';
 
 const GOOGLE_MAPS_API_KEY =
   process.env.GOOGLE_MAPS_PLATFORM_KEY ||
@@ -242,7 +247,48 @@ const MeetingCard: React.FC<{ meeting: Meeting, onSelect: (m: Meeting) => void }
   );
 };
 
+const ResourceCard: React.FC<{ resource: Resource }> = ({ resource }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-slate-800/20 border border-slate-800 p-6 rounded-3xl space-y-4"
+    >
+      <div className="flex justify-between items-start">
+        <div>
+          <span className="text-[10px] font-black px-2 py-1 bg-blue-600/10 text-blue-500 rounded border border-blue-500/20 uppercase tracking-widest leading-none">
+            {resource.category}
+          </span>
+          <h3 className="text-xl font-bold text-white mt-3">{resource.name}</h3>
+        </div>
+        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{resource.neighborhood}</div>
+      </div>
+      <p className="text-slate-400 text-sm leading-relaxed">{resource.description}</p>
+      <div className="flex flex-col gap-2 pt-2">
+        <div className="flex items-center gap-2 text-xs text-slate-300">
+          <MapPin size={14} className="text-blue-500" />
+          {resource.address}
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-300">
+          <Phone size={14} className="text-emerald-500" />
+          {resource.phone}
+        </div>
+      </div>
+      <a 
+        href={resource.website} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-slate-700/50"
+      >
+        <Eye size={16} /> VISIT WEBSITE
+      </a>
+    </motion.div>
+  );
+};
+
 const SponsorCard: React.FC<{ sponsor: Sponsor, onReachOut: (s: Sponsor) => void }> = ({ sponsor, onReachOut }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
@@ -276,12 +322,34 @@ const SponsorCard: React.FC<{ sponsor: Sponsor, onReachOut: (s: Sponsor) => void
           <span key={tag} className="text-[10px] font-semibold bg-slate-900 border border-slate-700/50 px-2.5 py-1 rounded-full text-slate-300">#{tag}</span>
         ))}
       </div>
-      <button 
-        onClick={() => onReachOut(sponsor)}
-        className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
-      >
-        <MessageCircle size={20} /> Reach Out
-      </button>
+      
+      <div className="flex gap-2">
+        <button 
+          onClick={() => onReachOut(sponsor)}
+          className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+        >
+          <MessageCircle size={20} /> Reach Out
+        </button>
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="px-6 py-4 bg-slate-900 border border-slate-700 text-slate-400 hover:text-white rounded-2xl font-bold transition-all"
+        >
+           {isExpanded ? <ChevronRight className="rotate-90" /> : <ChevronRight />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden mt-6 pt-6 border-t border-slate-800"
+          >
+            <MentorReviews mentorId={sponsor.id} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
@@ -581,18 +649,192 @@ const WarmHandshakeModal = ({ sponsor, onClose, onStartChat }: { sponsor: Sponso
 
 // SponsorshipApplicationForm removed - now in a separate file
 
-const ChatView = ({ session, messages, currentUser, onBack, onSendMessage }: { session: any, messages: Message[], currentUser: FirebaseUser | null, onBack: () => void, onSendMessage: (text: string) => void }) => {
-  const [message, setMessage] = useState('');
+const AISupportView = ({ currentUser }: { currentUser: any }) => {
+  const { isAdReady, showAd } = useRewardedAd();
+  const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  const isMentor = session.sponsorId === currentUser?.uid || session.id === currentUser?.uid; // Approximation
-  // Better: check if we are the userId or sponsorId
-  const partnerName = session.userId === currentUser?.uid ? session.sponsorName : session.userName;
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userText = input;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: userText }]);
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/gemini/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: userText,
+          history: messages 
+        })
+      });
+      const data = await res.json();
+      if (data.text) {
+        setMessages(prev => [...prev, { role: 'model', text: data.text }]);
+      }
+    } catch (err) {
+      console.error("AI Error:", err);
+      setMessages(prev => [...prev, { role: 'model', text: "I'm having a little trouble connecting right now. Please try again or reach out to a human mentor." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col h-[calc(100vh-180px)] bg-slate-950 rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl"
+    >
+      {/* Header */}
+      <div className="p-6 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-900/20">
+            <Sparkles className="text-white" size={20} />
+          </div>
+          <div>
+            <h3 className="font-black text-white text-base leading-none italic">Sober Spokane AI</h3>
+            <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest mt-1">24/7 Recovery Support</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdReady && (
+            <button 
+              onClick={showAd}
+              title="Watch a short ad to support our recovery mission"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/10 border border-rose-500/20 rounded-full text-rose-500 hover:bg-rose-600 hover:text-white transition-all group shadow-sm shadow-rose-900/10"
+            >
+              <Heart size={12} className="fill-current animate-pulse group-hover:animate-none" />
+              <span className="text-[9px] font-black uppercase tracking-widest leading-none">Support Us</span>
+            </button>
+          )}
+          <div className="hidden sm:block px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/50">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">Beta Guide</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center px-4">
+            <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mb-6 animate-pulse">
+              <Sparkles className="text-blue-500" size={32} />
+            </div>
+            <h4 className="text-xl font-bold text-white mb-2">How can I help you today?</h4>
+            <p className="text-slate-500 text-xs max-w-xs leading-relaxed uppercase tracking-wider font-medium">
+              Ask about local resources, meeting types, or just chat if you're having a tough moment.
+            </p>
+            <div className="grid grid-cols-1 gap-2 mt-8 w-full max-w-xs">
+              <button onClick={() => setInput("Where can I find detox resources?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">Where can I find detox?</button>
+              <button onClick={() => setInput("What's the difference between AA and NA?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">AA vs NA?</button>
+              <button onClick={() => setInput("I'm feeling a craving, what should I do?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">I'm having a craving</button>
+            </div>
+          </div>
+        )}
+        
+        {messages.map((m, idx) => (
+          <motion.div
+            key={idx}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${
+              m.role === 'user'
+                ? 'bg-blue-600 text-white rounded-tr-none'
+                : 'bg-slate-900 text-slate-100 border border-slate-800 rounded-tl-none'
+            }`}>
+              <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+            </div>
+          </motion.div>
+        ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl rounded-tl-none">
+              <div className="flex gap-1.5">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.1s]" />
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.2s]" />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <form onSubmit={handleSend} className="p-4 bg-slate-900/50 border-t border-slate-800">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your question..."
+            className="flex-1 bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all text-white"
+            disabled={isLoading}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/20"
+          >
+            <Send size={20} />
+          </button>
+        </div>
+        <p className="text-[9px] text-slate-600 mt-2 text-center font-bold uppercase tracking-widest">
+          AI Guide can make mistakes. For crises, dial 988.
+        </p>
+      </form>
+    </motion.div>
+  );
+};
+
+const ChatView = ({ session, messages, currentUser, onBack, onSendMessage, onTyping }: { session: any, messages: any[], currentUser: any, onBack: () => void, onSendMessage: (text: string) => void, onTyping: (isTyping: boolean) => void }) => {
+  const [message, setMessage] = useState('');
+  const [isTypingLocal, setIsTypingLocal] = useState(false);
+  const typingTimeoutRef = React.useRef<any>(null);
+
+  const partnerName = session.userId === currentUser?.uid ? (session.mentorName || 'Mentor') : (session.userName || 'Client');
+  const partnerId = session.userId === currentUser?.uid ? session.mentorUserId : session.userId;
+  const isPartnerTyping = session.typingStatus?.[partnerId] === true;
+
+  const partnerLastRead = session.lastRead?.[partnerId];
+  
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+    
+    if (!isTypingLocal) {
+      setIsTypingLocal(true);
+      onTyping(true);
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTypingLocal(false);
+      onTyping(false);
+    }, 2000);
+  };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim()) {
       onSendMessage(message);
       setMessage('');
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      setIsTypingLocal(false);
+      onTyping(false);
     }
   };
 
@@ -611,13 +853,19 @@ const ChatView = ({ session, messages, currentUser, onBack, onSendMessage }: { s
             {partnerName ? partnerName[0] : '?'}
           </div>
           <div>
-            <h3 className="font-bold text-white text-sm leading-none">{partnerName || 'Chat Partner'}</h3>
-            <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest mt-1">End-to-End Secure</p>
+            <h3 className="font-bold text-white text-sm leading-none">{partnerName}</h3>
+            <div className="flex items-center gap-1.5 mt-1">
+               {isPartnerTyping ? (
+                 <span className="text-[10px] text-blue-400 font-black uppercase animate-pulse">Typing...</span>
+               ) : (
+                 <span className="text-[10px] text-emerald-500 font-black uppercase tracking-widest leading-none">Healthy Connection</span>
+               )}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/50">
-          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active</span>
+        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/50">
+          <BadgeCheck size={14} className="text-blue-500" />
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Verified Account</span>
         </div>
       </div>
 
@@ -628,39 +876,53 @@ const ChatView = ({ session, messages, currentUser, onBack, onSendMessage }: { s
           initial="hidden"
           animate="visible"
           variants={{
-            visible: { transition: { staggerChildren: 0.1 } }
+            visible: { transition: { staggerChildren: 0.05 } }
           }}
         >
-          {messages.map((m) => (
-            <motion.div 
-              key={m.id} 
-              variants={{
-                hidden: { opacity: 0, y: 10, scale: 0.95 },
-                visible: { opacity: 1, y: 0, scale: 1 }
-              }}
-              className={`flex ${m.senderId === currentUser?.uid ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${
-                m.senderId === currentUser?.uid 
-                  ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-900/20' 
-                  : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'
-              }`}>
-                <p className="leading-relaxed font-medium">{m.text}</p>
-                <div className="mt-1 flex items-center justify-end gap-1.5">
-                  <span className="text-[9px] opacity-40 font-black uppercase">
-                    {m.timestamp}
-                  </span>
+          {messages.map((m, idx) => {
+            const isMe = m.senderId === currentUser?.uid;
+            const isLast = idx === messages.length - 1;
+            
+            return (
+              <motion.div 
+                key={m.id} 
+                variants={{
+                  hidden: { opacity: 0, y: 10, scale: 0.95 },
+                  visible: { opacity: 1, y: 0, scale: 1 }
+                }}
+                className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[85%] group`}>
+                  <div className={`p-4 rounded-2xl text-sm ${
+                    isMe 
+                      ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-900/20' 
+                      : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'
+                  }`}>
+                    <p className="leading-relaxed font-medium">{m.text}</p>
+                    <div className="mt-1 flex items-center justify-end gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[8px] font-black uppercase">
+                        {m.timestamp}
+                      </span>
+                    </div>
+                  </div>
+                  {isMe && isLast && partnerLastRead && (
+                    <div className="mt-1 flex justify-end">
+                       <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1">
+                         <ShieldCheck size={10} className="text-blue-500" /> Seen
+                       </span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </motion.div>
         
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center p-10 opacity-50">
             <MessageCircle size={48} className="text-slate-700 mb-4" />
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">No messages yet</p>
-            <p className="text-[10px] text-slate-600 mt-2">Start a secure conversation with your partner.</p>
+            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Safe Space</p>
+            <p className="text-[10px] text-slate-600 mt-2 max-w-[200px] mx-auto uppercase leading-tight font-bold">Your conversation is confidential and anonymous.</p>
           </div>
         )}
       </div>
@@ -671,9 +933,9 @@ const ChatView = ({ session, messages, currentUser, onBack, onSendMessage }: { s
           <input 
             type="text"
             value={message}
-            onChange={e => setMessage(e.target.value)}
-            placeholder="Type a secure message..."
-            className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all font-medium text-white"
+            onChange={handleInputChange}
+            placeholder="Type your message..."
+            className="flex-1 bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all font-medium text-white shadow-inner"
           />
           <button 
             type="submit"
@@ -722,9 +984,9 @@ export default function App() {
     );
   }
 
-  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat'>('meetings');
+  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   
@@ -753,6 +1015,20 @@ export default function App() {
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isGroundingActive, setIsGroundingActive] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  const incompleteProfile = useMemo(() => {
+    if (!userProfile) return false;
+    return !userProfile.neighborhood || (userProfile.recoveryNeeds || []).length === 0;
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (currentUser && userProfile && incompleteProfile && !isAuthLoading) {
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+    }
+  }, [currentUser, userProfile, incompleteProfile, isAuthLoading]);
 
   const activeChat = useMemo(() => {
     return chatSessions.find(s => s.id === activeChatId);
@@ -769,23 +1045,28 @@ export default function App() {
       if (user) {
         setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (!userDoc.exists()) {
-          const profile = {
-            email: user.email,
-            name: user.displayName || 'Spokane Neighbor',
-            photoURL: user.photoURL || '',
-            role: user.email === SUPER_ADMIN_EMAIL ? 'admin' : 'user',
-            sobrietyDate: new Date().toISOString().split('T')[0],
-            recoveryNeeds: []
-          };
-          await setDoc(userDocRef, profile);
-          setUserProfile(profile);
-          if (profile.role === 'admin') setIsSuperAdmin(true);
-        } else {
-          const data = userDoc.data();
-          setUserProfile(data);
-          if (data.role === 'admin') setIsSuperAdmin(true);
+        try {
+          const userDoc = await getDoc(userDocRef);
+          if (!userDoc.exists()) {
+            const profile: UserProfile = {
+              email: user.email || '',
+              name: user.displayName || 'Spokane Neighbor',
+              photoURL: user.photoURL || '',
+              role: user.email === SUPER_ADMIN_EMAIL ? 'admin' : 'user',
+              sobrietyDate: new Date().toISOString().split('T')[0],
+              recoveryNeeds: [],
+              neighborhood: '' // Initialize as empty
+            };
+            await setDoc(userDocRef, profile);
+            setUserProfile(profile);
+            if (profile.role === 'admin') setIsSuperAdmin(true);
+          } else {
+            const data = userDoc.data() as UserProfile;
+            setUserProfile(data);
+            if (data.role === 'admin') setIsSuperAdmin(true);
+          }
+        } catch (e) {
+          handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
         }
       } else {
         setUserProfile(null);
@@ -797,22 +1078,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (isAuthLoading || !currentUser) return;
 
-    // Sync User Profile
+    // Sync User Profile - Always loaded first
     const unsubProfile = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
+        const data = snap.data() as UserProfile;
         setUserProfile(data);
         setSobrietyDate(data.sobrietyDate || new Date().toISOString().split('T')[0]);
         setUserNeeds(data.recoveryNeeds || []);
         
         // Safety check for super admin status
-        if (data.role === 'admin' && !isSuperAdmin) {
+        if (data.role === 'admin') {
           setIsSuperAdmin(true);
         }
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`));
+    }, (error) => {
+      if (error.code !== 'permission-denied') {
+        handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
+      }
+    });
 
     // Sync Meetings
     const unsubMeetings = onSnapshot(collection(db, 'meetings'), (snap) => {
@@ -820,35 +1105,43 @@ export default function App() {
       setMeetings(docs);
     }, (error) => handleFirestoreError(error, OperationType.GET, 'meetings'));
 
-    // Sync Sponsors
-    const sponsorsQuery = isSuperAdmin 
-      ? collection(db, 'sponsors') 
-      : query(collection(db, 'sponsors'), or(where('status', '==', 'verified'), where('userId', '==', currentUser.uid)));
+    // Wait for profile if we want to ensure admin status is correct for these specific queries
+    // Though sponsors query works for anyone, we follow user's "completely loaded" directive.
+    let unsubSponsors = () => {};
+    let unsubChats = () => {};
+    let unsubAttendance = () => {};
+
+    if (userProfile) {
+      // Sync Sponsors (Mentors)
+      const sponsorsQuery = isSuperAdmin 
+        ? collection(db, 'sponsors') 
+        : query(collection(db, 'sponsors'), or(where('status', '==', 'verified'), where('userId', '==', currentUser.uid)));
+        
+      unsubSponsors = onSnapshot(sponsorsQuery, (snap) => {
+        const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
+        setSponsors(docs);
+      }, (error) => handleFirestoreError(error, OperationType.GET, 'sponsors'));
+
+      // Sync Attendance
+      unsubAttendance = onSnapshot(
+        query(collection(db, 'users', currentUser.uid, 'attendance'), orderBy('date', 'desc')),
+        (snap) => {
+          setAttendance(snap.docs.map(d => d.data()) as any);
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/attendance`)
+      );
+
+      // Sync Chats (User as Client OR User as Sponsor)
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid))
+      );
       
-    const unsubSponsors = onSnapshot(sponsorsQuery, (snap) => {
-      const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-      setSponsors(docs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'sponsors'));
-
-    // Sync Attendance
-    const unsubAttendance = onSnapshot(
-      query(collection(db, 'users', currentUser.uid, 'attendance'), orderBy('date', 'desc')),
-      (snap) => {
-        setAttendance(snap.docs.map(d => d.data()) as any);
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/attendance`)
-    );
-
-    // Sync Chats (User as Client OR User as Sponsor)
-    const chatsQuery = query(
-      collection(db, 'chats'),
-      or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid))
-    );
-    
-    const unsubChats = onSnapshot(chatsQuery, (snap) => {
-      const allMyChats = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-      setChatSessions(allMyChats);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'chats'));
+      unsubChats = onSnapshot(chatsQuery, (snap) => {
+        const allMyChats = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
+        setChatSessions(allMyChats);
+      }, (error) => handleFirestoreError(error, OperationType.GET, 'chats'));
+    }
 
     return () => {
       unsubProfile();
@@ -857,15 +1150,24 @@ export default function App() {
       unsubAttendance();
       unsubChats();
     };
-  }, [currentUser, isSuperAdmin]);
+  }, [currentUser, isSuperAdmin, isAuthLoading, userProfile?.role]); // Re-run when profile/role is stable
 
   const [messages, setMessages] = useState<Message[]>([]);
 
   useEffect(() => {
-    if (!activeChatId) {
-      setMessages([]);
-      return;
-    }
+    if (!activeChatId || !currentUser) return;
+
+    // Update read receipt
+    const updateReadReceipt = async () => {
+      try {
+        await updateDoc(doc(db, 'chats', activeChatId), {
+          [`lastRead.${currentUser.uid}`]: serverTimestamp()
+        });
+      } catch (e) {
+        console.error("Failed to update read receipt:", e);
+      }
+    };
+    updateReadReceipt();
 
     const unsubMessages = onSnapshot(
       query(collection(db, 'chats', activeChatId, 'messages'), orderBy('timestamp', 'asc')),
@@ -912,6 +1214,19 @@ export default function App() {
       }
     }
   };
+
+  const [allUserProfiles, setAllUserProfiles] = useState<UserProfile[]>([]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setAllUserProfiles([]);
+      return;
+    }
+    const unsubAllProfiles = onSnapshot(collection(db, 'users'), (snap) => {
+      setAllUserProfiles(snap.docs.map(d => d.data()) as UserProfile[]);
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'users'));
+    return () => unsubAllProfiles();
+  }, [isSuperAdmin]);
 
   const handleSendVerification = async () => {
     if (!currentUser) return;
@@ -1144,16 +1459,30 @@ export default function App() {
   const handleSendMessage = async (text: string) => {
     if (!activeChatId || !currentUser) return;
     try {
-      await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
+      const chatRef = doc(db, 'chats', activeChatId);
+      await addDoc(collection(chatRef, 'messages'), {
         senderId: currentUser.uid,
         text,
         timestamp: serverTimestamp()
       });
-      await updateDoc(doc(db, 'chats', activeChatId), {
-        lastMessageAt: serverTimestamp()
+      await updateDoc(chatRef, { 
+        lastMessageAt: serverTimestamp(),
+        [`lastRead.${currentUser.uid}`]: serverTimestamp(),
+        [`typingStatus.${currentUser.uid}`]: false
       });
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `chats/${activeChatId}/messages`);
+    }
+  };
+
+  const handleUpdateTyping = async (isTyping: boolean) => {
+    if (!activeChatId || !currentUser) return;
+    try {
+      await updateDoc(doc(db, 'chats', activeChatId), {
+        [`typingStatus.${currentUser.uid}`]: isTyping
+      });
+    } catch (e) {
+      // Ignore typing update errors to prevent UI noise
     }
   };
 
@@ -1164,6 +1493,19 @@ export default function App() {
       await updateDoc(doc(db, 'users', currentUser.uid), {
         recoveryNeeds: newNeeds
       });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
+    }
+  };
+
+  const handleUpdateNeighborhood = async (neighborhood: string) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        neighborhood
+      });
+      setUserProfile(prev => prev ? { ...prev, neighborhood } : prev);
+      triggerSystemNotification('Location Updated', `Preferences set to ${neighborhood}. Matching updated.`);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
     }
@@ -1181,13 +1523,17 @@ export default function App() {
           if (s.specialties.includes(need)) score += 2;
         });
 
-        // Small bonus for local neighborhood if we knew user's neighborhood (omitted for now)
+        // Neighborhood matching (Spokane specific logic)
+        if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) {
+          score += 3; // Significant boost for local proximity
+        }
+        
         return { sponsor: s, score };
       })
       .filter(m => m.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [sponsors, userNeeds]);
+  }, [sponsors, userNeeds, userProfile?.neighborhood]);
 
   const handleAddMeeting = async () => {
     if (!isSuperAdmin) return;
@@ -1373,6 +1719,45 @@ export default function App() {
         </AnimatePresence>
 
         <AnimatePresence mode="wait">
+          {/* VIEW: RESOURCES */}
+          {tab === 'resources' && (
+            <motion.div 
+              key="resources"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">Recovery Resources.</h2>
+              </div>
+              <p className="text-slate-400 text-sm mb-8 leading-relaxed">Spokane-specific resources for detox, sober living, and long-term recovery support.</p>
+              
+              <AdBanner className="mb-8" />
+
+              <div className="grid gap-6">
+                {(SPOKANE_RESOURCES as Resource[]).map(res => (
+                  <ResourceCard key={res.id} resource={res} />
+                ))}
+                <NativeAd />
+              </div>
+
+              <div className="p-8 bg-slate-900 border border-slate-800 rounded-3xl mt-12 text-center space-y-4">
+                 <Bus className="mx-auto text-blue-500 mb-2" size={32} />
+                 <h3 className="text-lg font-black text-white uppercase italic">Need a Ride?</h3>
+                 <p className="text-xs text-slate-500 max-w-xs mx-auto">All verified resources are accessible via Spokane Transit Authority (STA) routes. Check schedules on their website.</p>
+                 <a 
+                   href="https://www.spokanetransit.com/" 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   className="inline-block px-8 py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-500 transition-colors"
+                 >
+                   STA Schedules
+                 </a>
+              </div>
+            </motion.div>
+          )}
+
           {/* VIEW: CRISIS */}
           {tab === 'crisis' && (
             <motion.div 
@@ -1418,6 +1803,10 @@ export default function App() {
           )}
 
           {/* VIEW: CHAT */}
+          {tab === 'ai' && (
+            <AISupportView currentUser={currentUser} />
+          )}
+
           {tab === 'chat' && (
             <>
               {activeChatId && activeChat ? (
@@ -1427,6 +1816,7 @@ export default function App() {
                   currentUser={currentUser}
                   onBack={() => setActiveChatId(null)} 
                   onSendMessage={handleSendMessage}
+                  onTyping={handleUpdateTyping}
                 />
               ) : (
                 <ChatList 
@@ -1435,6 +1825,7 @@ export default function App() {
                     sponsor: sponsors.find(s => s.id === c.sponsorId)
                   }))}
                   onSelectChat={(id) => setActiveChatId(id)}
+                  currentUserId={currentUser?.uid}
                 />
               )}
             </>
@@ -1454,6 +1845,8 @@ export default function App() {
               pendingSponsors={sponsors.filter(s => s.status === 'pending')}
               onApprove={handleVerifySponsor}
               onReject={handleRejectSponsor}
+              allSponsors={sponsors}
+              allUserProfiles={allUserProfiles}
             />
           )}
 
@@ -1541,6 +1934,30 @@ export default function App() {
               {/* SETTINGS / PROGRESS MANAGEMENT */}
               <div className="bg-slate-800/20 rounded-[2rem] border border-slate-800 p-8 space-y-8">
                 {/* MATCH FINDER SECTION */}
+                <div className="space-y-6">
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                    <MapPin size={14} /> My Neighborhood
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {['Downtown', 'South Hill', 'North Side', 'Valley', 'West Plains', 'Airway Heights'].map(n => {
+                      const isActive = userProfile?.neighborhood === n;
+                      return (
+                        <button 
+                          key={n}
+                          onClick={() => handleUpdateNeighborhood(n)}
+                          className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${
+                            isActive 
+                              ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-600/20' 
+                              : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="space-y-6">
                   <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
                     <Heart size={14} /> My Recovery Needs
@@ -1761,12 +2178,15 @@ export default function App() {
                 </div>
               </div>
 
+              <AdBanner />
+
               <div className="grid gap-5">
                 <div className="flex items-center justify-between px-1">
                   <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
                     Nearby Support ({filteredMeetings.length})
                   </h2>
                 </div>
+                <NativeAd />
                 {filteredMeetings.length > 0 ? (
                   filteredMeetings.map(m => (
                     <div key={m.id} className="relative group">
@@ -1824,6 +2244,8 @@ export default function App() {
                   <p className="text-slate-500 text-sm font-bold uppercase tracking-wider">Connect with verified mentors</p>
                 </div>
 
+                <AdBanner />
+
                 <AnimatePresence>
                   {topMatches.length > 0 && (
                     <motion.div 
@@ -1878,6 +2300,7 @@ export default function App() {
                   {sponsors.filter(s => s.status === 'verified').map(s => (
                     <SponsorCard key={s.id} sponsor={s} onReachOut={setReachingOutTo} />
                   ))}
+                  <NativeAd />
                 </div>
               </div>
 
@@ -2075,6 +2498,14 @@ export default function App() {
           {tab === 'meetings' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
         <button 
+          onClick={() => setTab('resources')} 
+          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'resources' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <Bus size={22} className={tab === 'resources' ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : ''} />
+          <span className="text-[10px] font-black uppercase tracking-tighter">Guides</span>
+          {tab === 'resources' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-emerald-500 rounded-full" />}
+        </button>
+        <button 
           onClick={() => setTab('profile')} 
           className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'profile' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
         >
@@ -2089,6 +2520,14 @@ export default function App() {
           <MessageCircle size={22} className={tab === 'sponsors' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
           <span className="text-[10px] font-black uppercase tracking-tighter">Partners</span>
           {tab === 'sponsors' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
+        </button>
+        <button 
+          onClick={() => setTab('ai')} 
+          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'ai' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <Sparkles size={22} className={tab === 'ai' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
+          <span className="text-[10px] font-black uppercase tracking-tighter">AI Support</span>
+          {tab === 'ai' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
         <button 
           onClick={() => { setTab('chat'); setActiveChatId(null); }} 
@@ -2115,6 +2554,13 @@ export default function App() {
 
       {/* MODALS & OVERLAYS */}
       <AnimatePresence>
+        {showOnboarding && currentUser && userProfile && (
+          <ProfileOnboarding 
+            user={currentUser} 
+            profile={userProfile} 
+            onComplete={() => setShowOnboarding(false)} 
+          />
+        )}
         {isGroundingActive && (
           <motion.div 
             initial={{ opacity: 0 }}

@@ -16,6 +16,8 @@ export const MeetingReviews: React.FC<MeetingReviewsProps> = ({ meetingId }) => 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!meetingId) return;
+
     const q = query(
       collection(db, `meetings/${meetingId}/reviews`),
       orderBy('timestamp', 'desc')
@@ -28,7 +30,10 @@ export const MeetingReviews: React.FC<MeetingReviewsProps> = ({ meetingId }) => 
       })) as Review[];
       setReviews(revs);
       setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `meetings/${meetingId}/reviews`));
+    }, (error) => {
+      console.error("Meeting reviews error:", error);
+      handleFirestoreError(error, OperationType.GET, `meetings/${meetingId}/reviews`);
+    });
 
     return () => unsubscribe();
   }, [meetingId]);
@@ -110,9 +115,10 @@ export const MeetingReviews: React.FC<MeetingReviewsProps> = ({ meetingId }) => 
           </div>
         </form>
       ) : auth.currentUser && (
-        <div className="bg-amber-500/5 border border-amber-500/20 p-6 rounded-3xl text-center space-y-2">
-           <p className="text-xs font-bold text-amber-500 uppercase tracking-widest leading-none">Verification Required</p>
-           <p className="text-[10px] text-slate-500 font-medium italic">Please verify your email to share your experience with the community.</p>
+        <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center">
+          <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest leading-relaxed">
+            Email verification required to submit reviews.
+          </p>
         </div>
       )}
 

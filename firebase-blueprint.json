@@ -9,6 +9,7 @@
         "name": { "type": "string" },
         "photoURL": { "type": "string" },
         "sobrietyDate": { "type": "string", "format": "date" },
+        "neighborhood": { "type": "string" },
         "recoveryNeeds": { 
           "type": "array",
           "items": { "type": "string" }
@@ -101,6 +102,19 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "userName", "rating", "comment", "timestamp"]
+    },
+    "MentorReview": {
+      "title": "Mentor Review",
+      "description": "User feedback for a recovery mentor",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "rating", "comment", "timestamp"]
     }
   },
   "firestore": {
@@ -123,6 +137,10 @@
     "/sponsors/{sponsorId}": {
       "schema": "Sponsor",
       "description": "Available mentors"
+    },
+    "/sponsors/{sponsorId}/reviews/{reviewId}": {
+      "schema": "MentorReview",
+      "description": "User reviews for a mentor"
     },
     "/chats/{chatId}": {
       "schema": "Chat",

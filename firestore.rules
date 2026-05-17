@@ -40,6 +40,7 @@ service cloud.firestore {
              data.role in ['user', 'mentor', 'admin'] &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
              (!('sobrietyDate' in data) || (data.sobrietyDate is string && data.sobrietyDate.size() <= 50)) &&
+             (!('neighborhood' in data) || (data.neighborhood is string && data.neighborhood.size() <= 100)) &&
              (!('recoveryNeeds' in data) || (data.recoveryNeeds is list && data.recoveryNeeds.size() <= 20));
     }
 
@@ -69,7 +70,7 @@ service cloud.firestore {
     function isValidChat(data) {
       return data.keys().hasAll(['userId', 'mentorUserId', 'sponsorId', 'lastMessageAt']) &&
              data.userId is string && data.mentorUserId is string && data.sponsorId is string &&
-             data.lastMessageAt == request.time;
+             (data.lastMessageAt == request.time || data.lastMessageAt is timestamp);
     }
 
     function isValidMessage(data) {
@@ -102,13 +103,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
-      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'user';
+      allow create: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().role == 'user' || 
+        (incoming().role == 'admin' && request.auth.token.email == 'cheyoung1983@gmail.com')
+      );
       allow update: if isOwner(userId) && isValidUser(incoming()) && (
         isAdmin() || (
-          // Users cannot change their own role or email
-          incoming().role == existing().role &&
+          // Users cannot voluntarily change their own role to admin if not authorized
+          (incoming().role == existing().role || (incoming().role == 'admin' && request.auth.token.email == 'cheyoung1983@gmail.com')) &&
           incoming().email == existing().email &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood'])
         )
       );
 
@@ -144,6 +148,12 @@ service cloud.firestore {
         )
       );
       allow delete: if isAdmin();
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create: if isVerifiedUser() && isValidReview(incoming());
+        allow update, delete: if isAdmin() || isOwner(existing().userId);
+      }
     }
 
     match /chats/{chatId} {
@@ -157,7 +167,7 @@ service cloud.firestore {
       
       allow update: if (resource.data.userId == request.auth.uid || resource.data.mentorUserId == request.auth.uid || isAdmin()) && 
                     isValidChat(incoming()) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt']);
+                    incoming().diff(existing()).affectedKeys().hasAny(['lastMessageAt', 'typingStatus', 'lastRead']);
 
       match /messages/{messageId} {
         allow read: if isSignedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.mentorUserId == request.auth.uid || isAdmin());
