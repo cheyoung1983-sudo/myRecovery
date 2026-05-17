@@ -1,8 +1,10 @@
 {
   "name": "myRecovery Spokane",
-  "description": "A trauma-informed recovery support network for Spokane, WA. Find AA/NA meetings, connect with verified sponsors, and access urgent grounding tools.",
+  "description": "An advanced recovery ecosystem for Spokane, WA. Featuring interactive meeting maps, push notifications for reminders and messages, sobriety tracking, and smart sponsor matching based on recovery needs.",
   "requestFramePermissions": [
     "geolocation"
   ],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

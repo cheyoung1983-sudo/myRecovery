@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and recovery status",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "sobrietyDate": { "type": "string", "format": "date" },
+        "recoveryNeeds": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "role": { "type": "string", "enum": ["user", "mentor", "admin"] }
+      },
+      "required": ["email", "name", "role"]
+    },
+    "Meeting": {
+      "title": "Recovery Meeting",
+      "description": "Details of AA/NA meetings in Spokane",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "neighborhood": { "type": "string" },
+        "address": { "type": "string" },
+        "time": { "type": "string" },
+        "day": { "type": "string" },
+        "fellowship": { "type": "string", "enum": ["AA", "NA"] },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "sponsors": { 
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["name", "neighborhood", "address", "time", "day", "fellowship", "lat", "lng"]
+    },
+    "Sponsor": {
+      "title": "Recovery Mentor",
+      "description": "Verified recovery mentors/sponsors",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "years": { "type": "number" },
+        "bio": { "type": "string" },
+        "specialties": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
+        "isVerified": { "type": "boolean" },
+        "neighborhood": { "type": "string" }
+      },
+      "required": ["userId", "name", "years", "status", "isVerified"]
+    },
+    "Chat": {
+      "title": "Chat Session",
+      "description": "Communication between user and mentor",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "sponsorId": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sponsorId", "lastMessageAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "Individual message in a chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "text", "timestamp"]
+    },
+    "Attendance": {
+      "title": "Attendance Record",
+      "description": "User attendance at a meeting",
+      "type": "object",
+      "properties": {
+        "meetingId": { "type": "string" },
+        "date": { "type": "string", "format": "date" }
+      },
+      "required": ["meetingId", "date"]
+    },
+    "Review": {
+      "title": "Meeting Review",
+      "description": "User rating and comment for a meeting",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "rating", "comment", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{userId}/attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "User meeting attendance records"
+    },
+    "/meetings/{meetingId}": {
+      "schema": "Meeting",
+      "description": "Directory of meetings"
+    },
+    "/meetings/{meetingId}/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "User reviews for a meeting"
+    },
+    "/sponsors/{sponsorId}": {
+      "schema": "Sponsor",
+      "description": "Available mentors"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Active conversations"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Message history for a chat"
+    }
+  }
+}

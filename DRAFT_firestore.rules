@@ -1,0 +1,152 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isVerifiedUser() { return isSignedIn() && isEmailVerified(); }
+    
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'cheyoung1983@gmail.com' ||
+        getUserData(request.auth.uid).role == 'admin'
+      );
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // --- Validation Blueprints ---
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'name', 'role']) &&
+             data.keys().size() <= 6 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.role in ['user', 'mentor', 'admin'] &&
+             (!('sobrietyDate' in data) || (data.sobrietyDate is string && data.sobrietyDate.size() <= 50)) &&
+             (!('recoveryNeeds' in data) || (data.recoveryNeeds is list && data.recoveryNeeds.size() <= 20));
+    }
+
+    function isValidMeeting(data) {
+      return data.keys().hasAll(['name', 'neighborhood', 'address', 'time', 'day', 'fellowship', 'lat', 'lng']) &&
+             data.name is string && data.name.size() <= 200 &&
+             data.neighborhood is string && data.neighborhood.size() <= 100 &&
+             data.address is string && data.address.size() <= 500 &&
+             data.time is string && data.time.size() <= 50 &&
+             data.day is string && data.day.size() <= 20 &&
+             data.fellowship in ['AA', 'NA'] &&
+             data.lat is number && data.lng is number;
+    }
+
+    function isValidSponsor(data) {
+      return data.keys().hasAll(['userId', 'name', 'years', 'status', 'isVerified']) &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() <= 128 &&
+             data.years is number && data.years >= 0 &&
+             data.status in ['pending', 'verified', 'rejected'] &&
+             data.isVerified is bool &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 5000)) &&
+             (!('neighborhood' in data) || (data.neighborhood is string && data.neighborhood.size() <= 100)) &&
+             (!('specialties' in data) || (data.specialties is list && data.specialties.size() <= 15));
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['userId', 'sponsorId', 'lastMessageAt']) &&
+             data.userId is string && data.sponsorId is string &&
+             data.lastMessageAt == request.time;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() <= 10000 &&
+             data.timestamp == request.time;
+    }
+
+    function isValidAttendance(data) {
+      return data.keys().hasAll(['meetingId', 'date']) &&
+             data.meetingId is string && data.date is string;
+    }
+
+    // --- Collections ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().role == 'user';
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        isAdmin() || (
+          // Standard users cannot change their role
+          incoming().role == existing().role &&
+          incoming().email == existing().email &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds'])
+        )
+      );
+
+      match /attendance/{attendanceId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+        allow create: if isValidAttendance(incoming());
+      }
+    }
+
+    match /meetings/{meetingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidMeeting(incoming());
+      allow update: if isAdmin() && isValidMeeting(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /sponsors/{sponsorId} {
+      allow read: if existing().status == 'verified' || isAdmin() || isOwner(existing().userId);
+      allow create: if isVerifiedUser() && isValidSponsor(incoming()) && 
+                    incoming().status == 'pending' && incoming().isVerified == false;
+      allow update: if (isOwner(existing().userId) || isAdmin()) && isValidSponsor(incoming()) && (
+        isAdmin() || (
+          // Mentors can only edit bio/specialties/neighborhood if already verified
+          existing().status == 'verified' &&
+          incoming().status == existing().status &&
+          incoming().isVerified == existing().isVerified &&
+          incoming().userId == existing().userId &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['bio', 'specialties', 'neighborhood', 'name'])
+        )
+      );
+    }
+
+    match /chats/{chatId} {
+      function isParticipant() {
+        return isOwner(existing().userId) || isOwner(get(/databases/$(database)/documents/sponsors/$(existing().sponsorId)).data.userId);
+      }
+      
+      allow get: if isParticipant() || isAdmin();
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || get(/databases/$(database)/documents/sponsors/$(resource.data.sponsorId)).data.userId == request.auth.uid);
+      
+      allow create: if isVerifiedUser() && isValidChat(incoming()) && (
+        incoming().userId == request.auth.uid || 
+        get(/databases/$(database)/documents/sponsors/$(incoming().sponsorId)).data.userId == request.auth.uid
+      );
+      
+      allow update: if isParticipant() && isValidChat(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['lastMessageAt']);
+
+      match /messages/{messageId} {
+        allow read: if isParticipant() || isAdmin();
+        allow create: if isParticipant() && isValidMessage(incoming());
+      }
+    }
+  }
+}
