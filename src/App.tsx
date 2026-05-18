@@ -45,6 +45,7 @@ import { AdBanner } from './components/AdBanner';
 import { NativeAd } from './components/NativeAd';
 import { ProfileOnboarding } from './components/ProfileOnboarding';
 import { useRewardedAd } from './hooks/useRewardedAd';
+import { Analytics } from '@vercel/analytics/react';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -2908,6 +2909,7 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      <Analytics />
     </div>
     </APIProvider>
   );
