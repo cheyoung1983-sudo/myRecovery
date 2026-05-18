@@ -1,5 +1,5 @@
 
-export const SPOKANE_NEIGHBORHOODS = ['All', 'South Hill', 'North Side', 'Valley', 'Downtown', 'West Central', 'Hillyard', 'Cheney'];
+export const SPOKANE_NEIGHBORHOODS = ['South Hill', 'North Side', 'Valley', 'Downtown', 'West Central', 'Hillyard', 'Cheney'];
 
 export const RECOVERY_NEEDS = [
   "Step Work",

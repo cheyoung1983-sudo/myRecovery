@@ -15,7 +15,8 @@ export const SponsorApplicationForm: React.FC<SponsorApplicationFormProps> = ({ 
     years: 0,
     specialties: '',
     bio: '',
-    neighborhood: 'South Hill'
+    neighborhood: 'South Hill',
+    isCrisisAvailable: false
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -80,7 +81,7 @@ export const SponsorApplicationForm: React.FC<SponsorApplicationFormProps> = ({ 
                 onChange={e => setFormData({...formData, neighborhood: e.target.value})}
                 className="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-white appearance-none"
               >
-                {SPOKANE_NEIGHBORHOODS.filter(n => n !== 'All').map(n => (
+                {SPOKANE_NEIGHBORHOODS.map(n => (
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
@@ -107,6 +108,21 @@ export const SponsorApplicationForm: React.FC<SponsorApplicationFormProps> = ({ 
               onChange={e => setFormData({...formData, bio: e.target.value})}
               className="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl text-sm focus:outline-none focus:border-blue-500 min-h-[120px] text-white"
               placeholder="Briefly describe your approach to sponsorship..."
+            />
+          </div>
+          <div className="flex items-center justify-between bg-slate-900/50 p-6 rounded-2xl border border-slate-700/50 group">
+            <div className="space-y-1">
+              <label htmlFor="isCrisisAvailable" className="text-sm font-bold text-white flex items-center gap-2">
+                 Crisis Available ?
+              </label>
+              <p className="text-[10px] text-slate-500 font-medium italic">Available for SOS/Crisis alerts from peers.</p>
+            </div>
+            <input 
+              id="isCrisisAvailable"
+              type="checkbox" 
+              checked={formData.isCrisisAvailable}
+              onChange={e => setFormData({...formData, isCrisisAvailable: e.target.checked})}
+              className="w-6 h-6 rounded-lg border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500 cursor-pointer" 
             />
           </div>
           <div className="flex items-center gap-3 bg-slate-900/50 p-4 rounded-2xl border border-slate-700/50">

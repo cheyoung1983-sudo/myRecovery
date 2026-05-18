@@ -204,6 +204,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       <div className="flex items-center gap-3 pt-6 pb-2">
+        <BadgeCheck size={20} className="text-emerald-500" />
+        <h3 className="text-xl font-bold text-white">Mentor Oversight</h3>
+        <span className="bg-emerald-500/20 text-emerald-500 px-3 py-1 rounded-full text-xs font-black">{allSponsors.length}</span>
+      </div>
+
+      <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-800">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Mentor</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Verification Status</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Years</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {allSponsors.map(s => (
+                <tr key={s.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/20 flex items-center justify-center text-xs font-black text-blue-500">
+                        {s.name[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">{s.name}</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-black">{s.neighborhood}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${
+                        s.status === 'verified' ? 'bg-emerald-500/20 text-emerald-500' :
+                        s.status === 'rejected' ? 'bg-rose-500/20 text-rose-500' :
+                        'bg-amber-500/20 text-amber-500'
+                      }`}>
+                        {s.status}
+                      </span>
+                      {s.isVerified && <BadgeCheck size={14} className="text-blue-500" />}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs text-slate-400 font-bold">{s.years} YRS</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex gap-2">
+                      {s.status !== 'verified' && (
+                        <button 
+                          onClick={() => onApprove(s.id)}
+                          className="p-2 bg-emerald-600/10 text-emerald-500 hover:bg-emerald-600 hover:text-white rounded-lg transition-all"
+                          title="Verify Mentor"
+                        >
+                          <Check size={14} />
+                        </button>
+                      )}
+                      {s.status !== 'rejected' && (
+                        <button 
+                          onClick={() => onReject(s.id)}
+                          className="p-2 bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all"
+                          title="Reject/Suspend Mentor"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pt-6 pb-2">
         <Clock size={20} className="text-amber-500" />
         <h3 className="text-xl font-bold text-white">Pending Approvals</h3>
         <span className="bg-amber-500/20 text-amber-500 px-3 py-1 rounded-full text-xs font-black">{pendingSponsors.length}</span>

@@ -1,6 +1,6 @@
 {
   "name": "myRecovery Spokane",
-  "description": "An advanced recovery ecosystem for Spokane, WA. Featuring interactive meeting maps, push notifications for reminders and messages, sobriety tracking, and smart sponsor matching based on recovery needs.",
+  "description": "An AI-powered recovery companion for Spokane, WA. Features Gemini-driven wellbeing reflections, smart peer matching, real-time 'Meeting Buddies', local community feeds, and an emergency SOS system with push notifications.",
   "requestFramePermissions": [
     "geolocation"
   ],
