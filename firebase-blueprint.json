@@ -115,6 +115,18 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "userName", "rating", "comment", "timestamp"]
+    },
+    "MoodEntry": {
+      "title": "Mood Log",
+      "description": "Daily wellness check-in",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "mood": { "type": "string", "enum": ["great", "good", "okay", "struggling", "crisis"] },
+        "note": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "mood", "timestamp"]
     }
   },
   "firestore": {
@@ -125,6 +137,10 @@
     "/users/{userId}/attendance/{attendanceId}": {
       "schema": "Attendance",
       "description": "User meeting attendance records"
+    },
+    "/users/{userId}/moodLogs/{logId}": {
+      "schema": "MoodEntry",
+      "description": "User daily mood logs"
     },
     "/meetings/{meetingId}": {
       "schema": "Meeting",

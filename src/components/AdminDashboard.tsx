@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Sponsor, UserProfile } from '../types';
+import { SUPER_ADMIN_EMAIL } from '../constants';
 import { BadgeCheck, X, Check, Clock, User, Award, MapPin, BarChart3, PieChart as PieIcon, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
@@ -9,7 +10,8 @@ interface AdminDashboardProps {
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   allSponsors: Sponsor[];
-  allUserProfiles: UserProfile[];
+  allUserProfiles: (UserProfile & { uid: string })[];
+  onUpdateRole: (uid: string, role: 'user' | 'mentor' | 'admin') => void;
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -19,7 +21,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onApprove, 
   onReject,
   allSponsors,
-  allUserProfiles
+  allUserProfiles,
+  onUpdateRole
 }) => {
   const needsData = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -130,6 +133,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span className="text-3xl font-black text-white">{mentorStats[0].value + mentorStats[1].value}</span>
               <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Total</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* USER MANAGEMENT */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <User className="text-blue-500" size={24} />
+          <h3 className="text-xl font-bold text-white">Member Directory</h3>
+        </div>
+        
+        <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-800">
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">User</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Role</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Neighborhood</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {allUserProfiles.map(u => (
+                  <tr key={u.email} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
+                          {u.photoURL ? <img src={u.photoURL} alt="" className="w-full h-full rounded-full" referrerPolicy="no-referrer" /> : u.name[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">{u.name}</p>
+                          <p className="text-[10px] text-slate-500">{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${
+                        u.role === 'admin' ? 'bg-rose-500/20 text-rose-500' :
+                        u.role === 'mentor' ? 'bg-emerald-500/20 text-emerald-500' :
+                        'bg-blue-500/20 text-blue-500'
+                      }`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-xs text-slate-400 font-medium">{u.neighborhood || 'Not set'}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <select 
+                        value={u.role}
+                        onChange={(e) => {
+                          onUpdateRole(u.uid, e.target.value as any);
+                        }}
+                        className="bg-slate-800 border border-slate-700 rounded-lg p-1 text-[10px] text-white focus:outline-none"
+                        disabled={u.email === SUPER_ADMIN_EMAIL}
+                      >
+                        <option value="user">User</option>
+                        <option value="mentor">Mentor</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

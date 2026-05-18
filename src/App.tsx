@@ -15,7 +15,8 @@ import {
   Eye, Fingerprint, Volume2, Flower2, Coffee,
   UserCheck, Clock, ShieldCheck, Info, Accessibility,
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
-  LogOut, LogIn, Mail, Sparkles
+  LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
+  Smile, Frown, Meh, AlertCircle, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -24,7 +25,8 @@ import {
 } from './lib/firebase';
 import { 
   signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser,
-  sendEmailVerification
+  sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { 
   doc, setDoc, onSnapshot, collection, query, where, orderBy, 
@@ -32,7 +34,7 @@ import {
   Timestamp, or
 } from 'firebase/firestore';
 
-import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile } from './types';
+import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry } from './types';
 import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL, SPOKANE_RESOURCES } from './constants';
 import { SponsorApplicationForm } from './components/SponsorApplicationForm';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -646,6 +648,201 @@ const WarmHandshakeModal = ({ sponsor, onClose, onStartChat }: { sponsor: Sponso
   );
 };
 
+const MoodLogger = ({ onLog }: { onLog: (mood: MoodEntry['mood'], note: string) => void }) => {
+  const [note, setNote] = useState('');
+  const [selectedMood, setSelectedMood] = useState<MoodEntry['mood'] | null>(null);
+
+  const moods: { type: MoodEntry['mood'], icon: React.ReactNode, color: string, label: string }[] = [
+    { type: 'great', icon: <Sparkles size={24} />, color: 'bg-emerald-500', label: 'Great' },
+    { type: 'good', icon: <Smile size={24} />, color: 'bg-blue-500', label: 'Good' },
+    { type: 'okay', icon: <Meh size={24} />, color: 'bg-slate-500', label: 'Okay' },
+    { type: 'struggling', icon: <Frown size={24} />, color: 'bg-orange-500', label: 'Struggling' },
+    { type: 'crisis', icon: <ShieldAlert size={24} />, color: 'bg-rose-500', label: 'Crisis' },
+  ];
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-6">
+      <div className="text-center">
+        <h3 className="text-xl font-black text-white italic tracking-tight">How are you today?</h3>
+        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">Daily Wellness Check-in</p>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2">
+        {moods.map((m) => (
+          <button
+            key={m.type}
+            onClick={() => setSelectedMood(m.type)}
+            className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
+              selectedMood === m.type 
+                ? `${m.color} text-white scale-105 shadow-lg` 
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-750'
+            }`}
+          >
+            {m.icon}
+            <span className="text-[8px] font-black uppercase tracking-tighter">{m.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Add a private note about your day..."
+          className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-white focus:border-blue-500 focus:outline-none transition-all resize-none h-24"
+        />
+        <button
+          onClick={() => {
+            if (selectedMood) {
+              onLog(selectedMood, note);
+              setNote('');
+              setSelectedMood(null);
+            }
+          }}
+          disabled={!selectedMood}
+          className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
+        >
+          Save Daily Log
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const RecoveryHub = ({ 
+  daysSober, 
+  moodLogs, 
+  onLogMood 
+}: { 
+  daysSober: number, 
+  moodLogs: MoodEntry[], 
+  onLogMood: (mood: MoodEntry['mood'], note: string) => void 
+}) => {
+  const milestones = [
+    { label: '24 Hours', days: 1, icon: '🌟' },
+    { label: '1 Week', days: 7, icon: '🔥' },
+    { label: '1 Month', days: 30, icon: '💎' },
+    { label: '3 Months', days: 90, icon: '🏆' },
+    { label: '6 Months', days: 180, icon: '🛡️' },
+    { label: '1 Year', days: 365, icon: '👑' },
+  ];
+
+  return (
+    <div className="space-y-8 pb-10">
+      {/* SOBRIETY CLOCK */}
+      <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-10 rounded-[3rem] text-center shadow-2xl relative overflow-hidden group">
+        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
+          <Trophy size={120} />
+        </div>
+        <p className="text-blue-200 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Total Time in Recovery</p>
+        <div className="flex items-baseline justify-center gap-3">
+          <span className="text-7xl font-black text-white tracking-tighter drop-shadow-lg">{daysSober}</span>
+          <span className="text-2xl font-black text-blue-200 uppercase tracking-tighter italic">Days</span>
+        </div>
+        <div className="mt-8 pt-6 border-t border-blue-400/30 flex justify-between items-center px-4">
+          <div className="text-left">
+            <p className="text-[9px] text-blue-200 font-black uppercase">Current Streak</p>
+            <p className="text-sm font-bold text-white">Spokane Strong</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[9px] text-blue-200 font-black uppercase">Community Rank</p>
+            <p className="text-sm font-bold text-white">Consistent Guide</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* MOOD TREND */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
+            <TrendingUp className="text-blue-500" /> Daily Pulse
+          </h2>
+          <MoodLogger onLog={onLogMood} />
+          
+          <div className="bg-slate-900/30 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recent Logs</h4>
+             {moodLogs.length === 0 ? (
+               <p className="text-xs text-slate-600 font-bold italic">No logs yet. Start today!</p>
+             ) : (
+               <div className="space-y-3">
+                 {moodLogs.slice(0, 3).map(log => (
+                   <div key={log.id} className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-slate-800">
+                     <div className={`p-2 rounded-lg ${
+                       log.mood === 'great' ? 'bg-emerald-500/20 text-emerald-500' :
+                       log.mood === 'good' ? 'bg-blue-500/20 text-blue-500' :
+                       log.mood === 'okay' ? 'bg-slate-500/20 text-slate-500' :
+                       log.mood === 'struggling' ? 'bg-orange-500/20 text-orange-500' :
+                       'bg-rose-500/20 text-rose-500'
+                     }`}>
+                       {log.mood === 'great' ? <Sparkles size={16} /> :
+                        log.mood === 'good' ? <Smile size={16} /> :
+                        log.mood === 'okay' ? <Meh size={16} /> :
+                        log.mood === 'struggling' ? <Frown size={16} /> :
+                        <ShieldAlert size={16} />}
+                     </div>
+                     <div className="flex-1">
+                       <p className="text-xs font-bold text-slate-100 line-clamp-1">{log.note || 'No note added'}</p>
+                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">
+                         {log.timestamp instanceof Timestamp ? log.timestamp.toDate().toLocaleDateString() : 'Just now'}
+                       </p>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             )}
+          </div>
+        </div>
+
+        {/* MILESTONES */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
+            <Trophy className="text-amber-500" /> Milestones
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            {milestones.map((m) => {
+              const isUnlocked = daysSober >= m.days;
+              return (
+                <div 
+                  key={m.label}
+                  className={`p-6 rounded-[2rem] border transition-all relative overflow-hidden ${
+                    isUnlocked 
+                      ? 'bg-slate-800/80 border-amber-500/30' 
+                      : 'bg-slate-900/30 border-slate-800 grayscale'
+                  }`}
+                >
+                  <div className="text-3xl mb-3">{m.icon}</div>
+                  <h4 className={`text-sm font-black uppercase tracking-tight ${isUnlocked ? 'text-white' : 'text-slate-600'}`}>
+                    {m.label}
+                  </h4>
+                  <p className="text-[9px] font-bold text-slate-500 mt-1 uppercase">
+                    {isUnlocked ? 'Achieved' : `${m.days - daysSober} days left`}
+                  </p>
+                  {isUnlocked && (
+                    <div className="absolute top-2 right-2">
+                      <BadgeCheck size={16} className="text-amber-500" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          
+          <div className="bg-slate-950/50 border border-slate-800 p-8 rounded-[2.5rem] flex items-center gap-6 group cursor-pointer hover:bg-slate-900 transition-all border-dashed">
+            <div className="p-4 bg-slate-900 rounded-2xl group-hover:bg-blue-600/10 transition-all">
+              <Calendar className="text-slate-500 group-hover:text-blue-500" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-300">Share Progress</h4>
+              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-tight">Generate recovery badge</p>
+            </div>
+            <ChevronRight className="ml-auto text-slate-700 group-hover:text-white" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // SponsorshipApplicationForm removed - now in a separate file
 
 const AISupportView = ({ currentUser }: { currentUser: any }) => {
@@ -983,7 +1180,7 @@ export default function App() {
     );
   }
 
-  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources'>('meetings');
+  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -1010,16 +1207,32 @@ export default function App() {
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
   const [reminders, setReminders] = useState<string[]>([]);
-  const [notifications, setNotifications] = useState<{id: string, text: string}[]>([]);
+  const [notifications, setNotifications] = useState<{id: string, text: string, type?: 'info' | 'success' | 'alert'}[]>([]);
+
+  const showToast = (text: string, type: 'info' | 'success' | 'alert' = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setNotifications(prev => [...prev, { id, text, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  };
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [moodLogs, setMoodLogs] = useState<MoodEntry[]>([]);
   const [isGroundingActive, setIsGroundingActive] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
 
   const incompleteProfile = useMemo(() => {
     if (!userProfile) return false;
     return !userProfile.neighborhood || (userProfile.recoveryNeeds || []).length === 0;
   }, [userProfile]);
+
+  const isMentor = useMemo(() => userProfile?.role === 'mentor', [userProfile]);
 
   useEffect(() => {
     if (currentUser && userProfile && incompleteProfile && !isAuthLoading) {
@@ -1109,6 +1322,7 @@ export default function App() {
     let unsubSponsors = () => {};
     let unsubChats = () => {};
     let unsubAttendance = () => {};
+    let unsubMoods = () => {};
 
     if (userProfile) {
       // Sync Sponsors (Mentors)
@@ -1140,6 +1354,16 @@ export default function App() {
         const allMyChats = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
         setChatSessions(allMyChats);
       }, (error) => handleFirestoreError(error, OperationType.GET, 'chats'));
+
+      // Sync Mood Logs
+      const unsubMoodsSync = onSnapshot(
+        query(collection(db, 'users', currentUser.uid, 'moodLogs'), orderBy('timestamp', 'desc')),
+        (snap) => {
+          setMoodLogs(snap.docs.map(d => ({ ...d.data(), id: d.id })) as MoodEntry[]);
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/moodLogs`)
+      );
+      unsubMoods = unsubMoodsSync;
     }
 
     return () => {
@@ -1148,10 +1372,28 @@ export default function App() {
       unsubSponsors();
       unsubAttendance();
       unsubChats();
+      unsubMoods();
     };
-  }, [currentUser, isSuperAdmin, isAuthLoading, userProfile?.role]); // Re-run when profile/role is stable
+  }, [currentUser, isSuperAdmin, isAuthLoading, userProfile?.role, userProfile]); // Re-run when profile/role is stable
 
   const [messages, setMessages] = useState<Message[]>([]);
+
+  const unreadCount = useMemo(() => {
+    if (!currentUser) return 0;
+    return chatSessions.filter(c => {
+      const lastRead = c.lastRead?.[currentUser.uid];
+      const lastMessageAt = c.lastMessageAt;
+      if (!lastMessageAt) return false;
+      if (!lastRead) return true;
+      try {
+        const lastReadMillis = typeof lastRead.toMillis === 'function' ? lastRead.toMillis() : new Date(lastRead).getTime();
+        const lastMsgMillis = typeof lastMessageAt.toMillis === 'function' ? lastMessageAt.toMillis() : new Date(lastMessageAt).getTime();
+        return lastMsgMillis > lastReadMillis;
+      } catch (e) {
+        return false;
+      }
+    }).length;
+  }, [chatSessions, currentUser]);
 
   useEffect(() => {
     if (!activeChatId || !currentUser) return;
@@ -1195,6 +1437,58 @@ export default function App() {
     }
   };
 
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCredential.user);
+      setResetSent(true); // Reuse this state to show the email sent message on the auth screen
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (currentUser) {
+      try {
+        await sendEmailVerification(currentUser);
+        alert('Verification email resent!');
+      } catch (error: any) {
+        setAuthError(error.message);
+      }
+    }
+  };
+
+  const checkVerification = async () => {
+    if (currentUser) {
+      await currentUser.reload();
+      // Forces a re-render because currentUser object changes internally or we can trigger it
+      window.location.reload(); 
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
   const handleLogout = async () => {
     await signOut(auth);
     setTab('meetings');
@@ -1212,6 +1506,8 @@ export default function App() {
         new Notification(title, { body });
       }
     }
+    // Provide in-app feedback as well
+    showToast(`${title}: ${body}`, "info");
   };
 
   const [allUserProfiles, setAllUserProfiles] = useState<UserProfile[]>([]);
@@ -1222,7 +1518,7 @@ export default function App() {
       return;
     }
     const unsubAllProfiles = onSnapshot(collection(db, 'users'), (snap) => {
-      setAllUserProfiles(snap.docs.map(d => d.data()) as UserProfile[]);
+      setAllUserProfiles(snap.docs.map(d => ({ ...d.data(), uid: d.id })) as (UserProfile & { uid: string })[]);
     }, (error) => handleFirestoreError(error, OperationType.GET, 'users'));
     return () => unsubAllProfiles();
   }, [isSuperAdmin]);
@@ -1370,7 +1666,7 @@ export default function App() {
         meetingId: String(meetingId),
         date: new Date().toISOString().split('T')[0]
       });
-      alert("Meeting logged! Consistency is key.");
+      showToast("Meeting logged! Consistency is key.", "success");
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, `users/${currentUser.uid}/attendance`);
     }
@@ -1438,6 +1734,33 @@ export default function App() {
     }
   };
 
+  const handleLogMood = async (mood: MoodEntry['mood'], note: string) => {
+    if (!currentUser) return;
+    try {
+      await addDoc(collection(db, 'users', currentUser.uid, 'moodLogs'), {
+        userId: currentUser.uid,
+        mood,
+        note,
+        timestamp: serverTimestamp()
+      });
+      triggerSystemNotification('Mood Logged', 'Stay consistent. You are doing great.');
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, `users/${currentUser.uid}/moodLogs`);
+    }
+  };
+
+  const handleUpdateUserRole = async (targetUid: string, newRole: 'user' | 'mentor' | 'admin') => {
+    if (!isSuperAdmin) return;
+    try {
+      await updateDoc(doc(db, 'users', targetUid), {
+        role: newRole
+      });
+      triggerSystemNotification('Success', `User role updated to ${newRole}`);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetUid}`);
+    }
+  };
+
   const toggleReminder = (id: string) => {
     setReminders(prev => 
       prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
@@ -1469,6 +1792,7 @@ export default function App() {
         [`lastRead.${currentUser.uid}`]: serverTimestamp(),
         [`typingStatus.${currentUser.uid}`]: false
       });
+      showToast("Message sent", "success");
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `chats/${activeChatId}/messages`);
     }
@@ -1582,16 +1906,24 @@ export default function App() {
       <div className="fixed top-24 right-4 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none px-4">
         <AnimatePresence>
           {notifications.map((n) => (
-            <motion.div
+            <motion.div 
               key={n.id}
               initial={{ opacity: 0, x: 20, scale: 0.9 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 20, scale: 0.9 }}
-              className="pointer-events-auto bg-slate-900 border border-blue-500/30 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border-l-4 border-l-blue-500"
+              className={`pointer-events-auto bg-slate-900 border p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border-l-4 ${
+                n.type === 'success' ? 'border-emerald-500/50 border-l-emerald-500' : 
+                n.type === 'alert' ? 'border-rose-500/50 border-l-rose-500' : 
+                'border-blue-500/50 border-l-blue-500'
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-600/10 rounded-lg shrink-0">
-                  <Bell size={18} className="text-blue-500" />
+                <div className={`p-2 rounded-lg shrink-0 ${
+                  n.type === 'success' ? 'bg-emerald-600/10 text-emerald-500' :
+                  n.type === 'alert' ? 'bg-rose-600/10 text-rose-500' :
+                  'bg-blue-600/10 text-blue-500'
+                }`}>
+                  {n.type === 'success' ? <Check size={18} /> : n.type === 'alert' ? <AlertCircle size={18} /> : <Bell size={18} />}
                 </div>
                 <p className="text-sm font-bold text-white leading-tight">{n.text}</p>
               </div>
@@ -1846,6 +2178,7 @@ export default function App() {
               onReject={handleRejectSponsor}
               allSponsors={sponsors}
               allUserProfiles={allUserProfiles}
+              onUpdateRole={handleUpdateUserRole}
             />
           )}
 
@@ -1860,77 +2193,164 @@ export default function App() {
             >
               {!currentUser ? (
                 <motion.div 
-                  initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
-                  animate={{ opacity: 1, backdropFilter: "blur(10px)" }}
-                  className="text-center py-20 bg-slate-900 border border-slate-800 rounded-[2.5rem] space-y-8 relative overflow-hidden"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden relative"
                 >
-                  <motion.div 
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", damping: 12, stiffness: 100 }}
-                    className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto relative z-10"
-                  >
-                    <UserCheck size={48} className="text-blue-500" />
-                  </motion.div>
+                  <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/30" />
                   
-                  <div className="space-y-3 px-8 relative z-10">
-                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">Access Your Profile.</h2>
-                    <p className="text-slate-500 text-sm font-medium max-w-sm mx-auto">Sign in to track your sobriety, log attendance, and securely connect with Spokane recovery mentors.</p>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">
+                      {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Join the Network' : 'Reset Password'}
+                    </h2>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-relaxed">
+                      {authMode === 'login' ? 'Access your recovery profile' : authMode === 'signup' ? 'Start your journey today' : 'We will send you a reset link'}
+                    </p>
                   </div>
 
-                  <motion.button 
-                    whileHover={{ scale: 1.05, backgroundColor: "#3b82f6" }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleLogin}
-                    className="px-12 py-5 bg-blue-600 text-white rounded-3xl font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-blue-900/40 relative z-10 transition-colors"
-                  >
-                    Sign In with Google
-                  </motion.button>
+                  {resetSent ? (
+                    <div className="text-center py-6 space-y-4">
+                      <div className="w-16 h-16 bg-emerald-600/20 rounded-full flex items-center justify-center mx-auto text-emerald-500">
+                        <Mail size={32} />
+                      </div>
+                      <p className="text-white font-bold">{authMode === 'signup' ? 'Check Your Inbox' : 'Email Sent!'}</p>
+                      <p className="text-slate-500 text-xs">
+                        {authMode === 'signup' 
+                          ? 'We\'ve sent a verification link to your email. Please verify to complete signup.'
+                          : 'Check your inbox for instructions to reset your password.'}
+                      </p>
+                      <button 
+                        onClick={() => { setAuthMode('login'); setResetSent(false); }}
+                        className="text-blue-500 text-xs font-black uppercase tracking-widest hover:underline"
+                      >
+                        Back to Login
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={authMode === 'login' ? handleEmailLogin : authMode === 'signup' ? handleSignup : handleResetPassword} className="space-y-4">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
+                          <input 
+                            type="email" 
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="your@email.com"
+                            className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm text-white focus:border-blue-500 focus:outline-none transition-all shadow-inner"
+                          />
+                        </div>
+                        {authMode !== 'forgot' && (
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Password</label>
+                            <input 
+                              type="password" 
+                              required
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm text-white focus:border-blue-500 focus:outline-none transition-all shadow-inner"
+                            />
+                          </div>
+                        )}
+                      </div>
 
-                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-600/5 to-transparent pointer-events-none" />
+                      {authError && (
+                        <p className="text-rose-500 text-[10px] font-bold uppercase text-center bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">
+                          {authError}
+                        </p>
+                      )}
+
+                      <button 
+                        type="submit"
+                        className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-[0.98]"
+                      >
+                        {authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : 'Send Link'}
+                      </button>
+
+                      <div className="flex items-center gap-4 py-2">
+                        <div className="h-px flex-1 bg-slate-800" />
+                        <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">OR</span>
+                        <div className="h-px flex-1 bg-slate-800" />
+                      </div>
+
+                      <button 
+                        type="button"
+                        onClick={handleLogin}
+                        className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-slate-700/50"
+                      >
+                        <LogIn size={18} className="text-blue-500" /> Continue with Google
+                      </button>
+
+                      <div className="flex flex-col gap-3 pt-6 items-center text-center">
+                        {authMode === 'login' ? (
+                          <>
+                            <button type="button" onClick={() => setAuthMode('forgot')} className="text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-blue-400 transition-colors">
+                              Forgot Password?
+                            </button>
+                            <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest">
+                              New here? <button type="button" onClick={() => setAuthMode('signup')} className="text-blue-500 hover:underline">Create Account</button>
+                            </p>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => setAuthMode('login')} className="text-blue-500 text-[10px] font-black uppercase tracking-widest hover:underline">
+                            Back to Sign In
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  )}
+                </motion.div>
+              ) : !currentUser.emailVerified ? (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden text-center relative"
+                >
+                  <div className="absolute top-0 left-0 w-full h-1 bg-amber-500/30" />
+                  <div className="w-20 h-20 bg-amber-600/10 rounded-full flex items-center justify-center mx-auto text-amber-500 border border-amber-500/20">
+                    <ShieldCheck size={40} />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight leading-none">Security Hold</h2>
+                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest leading-relaxed">
+                      Verify your email address to unlock full features.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 space-y-4">
+                    <p className="text-white font-bold text-sm font-mono">{currentUser.email}</p>
+                    <button 
+                      onClick={handleResendVerification}
+                      className="text-blue-500 text-[10px] font-black uppercase tracking-[0.2em] hover:text-blue-400 transition-colors"
+                    >
+                      Resend Verification Link
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={checkVerification}
+                      className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-95"
+                    >
+                      I've Verified My Email
+                    </button>
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full py-4 bg-slate-800 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-slate-300 transition-all"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
                 </motion.div>
               ) : (
                 <>
-                  {/* SOBRIETY TRACKER */}
-                  <div className="text-center space-y-6">
-                <div className="relative inline-block">
-                  <div className="absolute inset-0 bg-blue-600 blur-3xl opacity-20 animate-pulse" />
-                  <div className="relative w-48 h-48 rounded-full border-4 border-blue-600/30 flex flex-col items-center justify-center p-8 bg-slate-900 shadow-2xl">
-                    <Heart size={32} className="text-rose-500 mb-2 fill-current" />
-                    <span className="text-5xl font-black text-white">{daysSober}</span>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 mt-1">Days Sober</span>
+                  <div className="text-center space-y-2">
+                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">Profile Settings</h2>
+                    <p className="text-slate-400 text-sm font-medium">Customize your Spokane recovery experience.</p>
                   </div>
-                </div>
 
-                {/* SOBRIETY CHIPS */}
-                <div className="flex flex-wrap justify-center gap-4 mt-4">
-                  {[1, 30, 60, 90, 180, 270, 365].map((milestone) => {
-                    const isEarned = daysSober >= milestone;
-                    const label = milestone === 1 ? '24h' : milestone >= 365 ? '1yr' : `${Math.floor(milestone/30)}mo`;
-                    return (
-                      <motion.div 
-                        key={milestone}
-                        whileHover={isEarned ? { scale: 1.1, rotate: 5 } : {}}
-                        className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-[10px] font-black uppercase transition-all shadow-lg ${
-                          isEarned 
-                            ? 'bg-gradient-to-br from-amber-400 to-amber-600 border-amber-300 text-amber-950 shadow-amber-500/20' 
-                            : 'bg-slate-800/50 border-slate-700 text-slate-600 grayscale opacity-40'
-                        }`}
-                        title={isEarned ? `Earned: ${milestone} Day Chip` : `${milestone} Day Milestone`}
-                      >
-                        {label}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-black text-white italic tracking-tight uppercase">Your Journey</h2>
-                  <p className="text-slate-400 text-sm font-medium">One day at a time, for a lifetime of days.</p>
-                </div>
-              </div>
-
-              {/* SETTINGS / PROGRESS MANAGEMENT */}
+                  {/* SETTINGS / PROGRESS MANAGEMENT */}
               <div className="bg-slate-800/20 rounded-[2rem] border border-slate-800 p-8 space-y-8">
                 {/* MATCH FINDER SECTION */}
                 <div className="space-y-6">
@@ -2123,6 +2543,15 @@ export default function App() {
         </motion.div>
       )}
 
+          {/* VIEW: HUB */}
+          {tab === 'hub' && currentUser && (
+            <RecoveryHub 
+              daysSober={daysSober}
+              moodLogs={moodLogs}
+              onLogMood={handleLogMood}
+            />
+          )}
+
           {/* VIEW: MEETINGS */}
           {tab === 'meetings' && (
             <motion.div 
@@ -2237,6 +2666,36 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="space-y-8"
             >
+              {isMentor && (
+                <div className="bg-gradient-to-br from-emerald-600 to-teal-800 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden group mb-6">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
+                    <UserCheck size={100} />
+                  </div>
+                  <h3 className="text-xl font-black text-white italic tracking-tight">Mentor Workspace</h3>
+                  <p className="text-emerald-100/70 text-[10px] font-bold uppercase tracking-widest mt-1">Spokane Recovery Advocate</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-8">
+                    <div className="bg-emerald-900/40 backdrop-blur-sm p-4 rounded-2xl border border-emerald-500/20">
+                      <p className="text-[9px] text-emerald-200 font-black uppercase">Active Partners</p>
+                      <p className="text-2xl font-black text-white">{chatSessions.length}</p>
+                    </div>
+                    <div className="bg-emerald-900/40 backdrop-blur-sm p-4 rounded-2xl border border-emerald-500/20">
+                      <p className="text-[9px] text-emerald-200 font-black uppercase">Service Status</p>
+                      <p className="text-sm font-bold text-white flex items-center gap-2">
+                        <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" /> Available
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => setTab('chat')}
+                    className="w-full mt-6 py-3 bg-white text-emerald-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-lg active:scale-95"
+                  >
+                    Open Partner Inbox
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-6">
                 <div className="space-y-2">
                   <h2 className="text-3xl font-black text-white tracking-tight leading-none uppercase italic">Support Network</h2>
@@ -2318,223 +2777,73 @@ export default function App() {
               </div>
             </motion.div>
           )}
-
-          {/* VIEW: ADMIN */}
-          {tab === 'admin' && (
-            <motion.div 
-              key="admin"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-8"
-            >
-              <header className="flex flex-col sm:flex-row items-center justify-between gap-6">
-                <div className="space-y-1 text-center sm:text-left">
-                  <h2 className="text-4xl font-black text-white italic tracking-tighter uppercase leading-none">
-                    Master Console
-                  </h2>
-                  <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center justify-center sm:justify-start gap-2">
-                    <ShieldCheck size={14} /> Dev Access Unlocked: {currentUser?.email}
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  {isSuperAdmin && (
-                    <button 
-                      onClick={handleBroadcastAlert}
-                      className="px-6 py-4 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-lg shadow-rose-950/30 flex items-center gap-2"
-                    >
-                      <Bell size={18} /> Broadcast Alert
-                    </button>
-                  )}
-                  <button onClick={() => setTab('meetings')} className="p-4 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 transition-all">
-                    <X size={20} />
-                  </button>
-                </div>
-              </header>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] text-center space-y-1 shadow-inner group">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-500 transition-colors">Directory Size</p>
-                  <p className="text-4xl font-black text-white">{meetings.length}</p>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] text-center space-y-1 shadow-inner group">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-emerald-500 transition-colors">Mentors Verified</p>
-                  <p className="text-4xl font-black text-white">{sponsors.filter(s => s.status === 'verified').length}</p>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] text-center space-y-1 shadow-inner group">
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-amber-500 transition-colors">Pending Vetting</p>
-                  <p className="text-4xl font-black text-amber-500">{sponsors.filter(s => s.status === 'pending').length}</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-600 px-1">Admin Queue</h3>
-                {sponsors.filter(s => s.status === 'pending').length > 0 ? (
-                  sponsors.filter(s => s.status === 'pending').map(s => (
-                    <div key={s.id} className="bg-slate-800/40 p-6 rounded-3xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-lg">
-                      <div className="text-center sm:text-left space-y-2">
-                        <h3 className="text-lg font-black text-white">{s.name}</h3>
-                        <p className="text-sm text-slate-400 font-medium italic">"{s.bio}"</p>
-                        <div className="flex justify-center sm:justify-start gap-2 pt-1">
-                          {s.specialties.map(tag => <span key={tag} className="text-[10px] bg-slate-900 border border-slate-700 px-2 py-0.5 rounded-full text-slate-500">#{tag}</span>)}
-                        </div>
-                      </div>
-                      {isSuperAdmin ? (
-                        <button 
-                          onClick={() => handleVerifySponsor(s.id)}
-                          className="flex items-center gap-2.5 px-6 py-4 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-black text-xs shadow-xl shadow-emerald-950/20 active:scale-95"
-                        >
-                          <UserCheck size={18} /> APPROVE
-                        </button>
-                      ) : (
-                        <div className="px-6 py-4 bg-slate-900/50 border border-slate-700 rounded-2xl text-slate-500 font-black text-[10px] uppercase tracking-widest">
-                          Pending Admin Review
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-10 bg-slate-900/30 rounded-3xl border border-slate-800 border-dashed">
-                    <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">No pending verifications</p>
-                  </div>
-                )}
-              </div>
-
-              {/* MENTOR PORTAL SECTION */}
-              <div className="space-y-6 pt-6 border-t border-slate-800/50">
-                <div className="space-y-1">
-                  <h3 className="text-xl font-black text-white italic tracking-tight uppercase">Mentor Portal</h3>
-                  <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Manage your verified presence</p>
-                </div>
-
-                <div className="grid gap-4">
-                  {sponsors.filter(s => s.status === 'verified').map(s => (
-                    <div key={s.id} className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 space-y-4">
-                      {isEditingProfile === s.id ? (
-                        <div className="space-y-6">
-                           <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Edit My Bio</label>
-                            <textarea 
-                              value={editBio}
-                              onChange={(e) => setEditBio(e.target.value)}
-                              className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-blue-500 min-h-[100px] font-medium"
-                              placeholder="Describe your recovery journey..."
-                            />
-                          </div>
-                          
-                          <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Specialties & Focus</label>
-                            <div className="flex flex-wrap gap-2">
-                              {RECOVERY_NEEDS.map(need => (
-                                <button 
-                                  key={need}
-                                  onClick={() => toggleEditSpecialty(need)}
-                                  className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all ${
-                                    editSpecialties.includes(need) 
-                                      ? 'bg-blue-600 border-blue-500 text-white' 
-                                      : 'bg-slate-800 border-slate-700 text-slate-500'
-                                  }`}
-                                >
-                                  {need}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex gap-3">
-                            <button 
-                              onClick={() => handleUpdateProfile(s.id)}
-                              className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all"
-                            >
-                              Save Changes
-                            </button>
-                            <button 
-                              onClick={() => setIsEditingProfile(null)}
-                              className="px-6 py-4 bg-slate-800 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-white transition-all"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500 font-bold text-lg">
-                              {s.name.charAt(0)}
-                            </div>
-                            <div>
-                                <h4 className="font-bold text-white text-base flex items-center gap-2">
-                                  {s.name} <BadgeCheck size={16} className="text-blue-500" />
-                                </h4>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Verified Account</p>
-                            </div>
-                          </div>
-                          <button 
-                            onClick={() => startEditingSponsor(s)}
-                            className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-blue-400 hover:bg-blue-600/10 transition-all"
-                          >
-                            <Settings2 size={20} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
       </main>
 
       {/* BOTTOM NAVIGATION */}
-      <nav className="fixed bottom-0 left-0 right-0 py-6 px-10 bg-[#0f172a]/95 backdrop-blur-2xl border-t border-slate-800/80 flex justify-around items-center z-50 shadow-2xl">
+      <nav className="fixed bottom-0 left-0 right-0 py-4 px-6 bg-[#0f172a]/95 backdrop-blur-2xl border-t border-slate-800/80 flex justify-around items-center z-50 shadow-2xl safe-area-bottom">
         <button 
           onClick={() => setTab('meetings')} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'meetings' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'meetings' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
         >
           <MapPin size={22} className={tab === 'meetings' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Meetings</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter">Maps</span>
           {tab === 'meetings' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
         <button 
-          onClick={() => setTab('resources')} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'resources' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Bus size={22} className={tab === 'resources' ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Guides</span>
-          {tab === 'resources' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-emerald-500 rounded-full" />}
-        </button>
-        <button 
-          onClick={() => setTab('profile')} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'profile' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Clock size={22} className={tab === 'profile' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Profile</span>
-          {tab === 'profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
-        <button 
           onClick={() => setTab('sponsors')} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'sponsors' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'sponsors' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
         >
-          <MessageCircle size={22} className={tab === 'sponsors' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
+          <UserCheck size={22} className={tab === 'sponsors' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
           <span className="text-[10px] font-black uppercase tracking-tighter">Partners</span>
           {tab === 'sponsors' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
         <button 
+          onClick={() => setTab('hub')} 
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'hub' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <Trophy size={22} className={tab === 'hub' ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : ''} />
+          <span className="text-[10px] font-black uppercase tracking-tighter text-emerald-500">My Hub</span>
+          {tab === 'hub' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-emerald-500 rounded-full" />}
+        </button>
+        <button 
           onClick={() => setTab('ai')} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'ai' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'ai' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
         >
           <Sparkles size={22} className={tab === 'ai' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">AI Support</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter">Guide</span>
           {tab === 'ai' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
         <button 
           onClick={() => { setTab('chat'); setActiveChatId(null); }} 
-          className={`flex flex-col items-center gap-1.5 transition-all relative ${tab === 'chat' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'chat' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
         >
-          <Mail size={22} className={tab === 'chat' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
+          <div className="relative">
+            <Mail size={22} className={tab === 'chat' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 rounded-full border-2 border-[#0f172a]" />
+            )}
+          </div>
           <span className="text-[10px] font-black uppercase tracking-tighter">Inbox</span>
           {tab === 'chat' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
+        </button>
+        {isSuperAdmin && (
+          <button 
+            onClick={() => setTab('admin')} 
+            className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'admin' ? 'text-amber-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            <ShieldCheck size={22} className={tab === 'admin' ? 'drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]' : ''} />
+            <span className="text-[10px] font-black uppercase tracking-tighter">Admin</span>
+            {tab === 'admin' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-amber-500 rounded-full" />}
+          </button>
+        )}
+        <button 
+          onClick={() => setTab('profile')} 
+          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'profile' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
+        >
+          <Settings2 size={22} className={tab === 'profile' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
+          <span className="text-[10px] font-black uppercase tracking-tighter">More</span>
+          {tab === 'profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
         </button>
       </nav>
       
@@ -2557,7 +2866,10 @@ export default function App() {
           <ProfileOnboarding 
             user={currentUser} 
             profile={userProfile} 
-            onComplete={() => setShowOnboarding(false)} 
+            onComplete={() => {
+              setShowOnboarding(false);
+              showToast("Profile configured successfully!", "success");
+            }} 
           />
         )}
         {isGroundingActive && (

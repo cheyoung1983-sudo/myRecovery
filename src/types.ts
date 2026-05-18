@@ -89,3 +89,18 @@ export interface UserProfile {
   neighborhood?: string;
   role: 'user' | 'mentor' | 'admin';
 }
+
+export interface MoodEntry {
+  id: string;
+  userId: string;
+  mood: 'great' | 'good' | 'okay' | 'struggling' | 'crisis';
+  note: string;
+  timestamp: any;
+}
+
+export interface Milestone {
+  id: string;
+  label: string;
+  days: number;
+  unlockedAt?: any;
+}

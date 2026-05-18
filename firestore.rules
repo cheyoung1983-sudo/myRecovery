@@ -94,6 +94,14 @@ service cloud.firestore {
              data.timestamp == request.time;
     }
 
+    function isValidMoodLog(data) {
+      return data.keys().hasAll(['userId', 'mood', 'timestamp']) &&
+             data.userId == request.auth.uid &&
+             data.mood in ['great', 'good', 'okay', 'struggling', 'crisis'] &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 2000)) &&
+             data.timestamp == request.time;
+    }
+
     // --- Collections ---
 
     match /test/connection {
@@ -107,10 +115,17 @@ service cloud.firestore {
         incoming().role == 'user' || 
         (incoming().role == 'admin' && request.auth.token.email == 'cheyoung1983@gmail.com')
       );
-      allow update: if isOwner(userId) && isValidUser(incoming()) && (
-        isAdmin() || (
-          // Users cannot voluntarily change their own role to admin if not authorized
-          (incoming().role == existing().role || (incoming().role == 'admin' && request.auth.token.email == 'cheyoung1983@gmail.com')) &&
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming()) && (
+        // Admin Case: Can change roles
+        (isAdmin() && (
+          // Protect the super admin from being demoted by others
+          (existing().email != 'cheyoung1983@gmail.com' || request.auth.token.email == 'cheyoung1983@gmail.com') &&
+          incoming().email == existing().email &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood'])
+        )) ||
+        // Owner Case: Regular updates (cannot change role or email)
+        (isOwner(userId) && 
+          incoming().role == existing().role &&
           incoming().email == existing().email &&
           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood'])
         )
@@ -119,6 +134,12 @@ service cloud.firestore {
       match /attendance/{attendanceId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidAttendance(incoming());
+      }
+
+      match /moodLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidMoodLog(incoming());
+        allow delete: if isOwner(userId) || isAdmin();
       }
     }
 

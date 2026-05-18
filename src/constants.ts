@@ -66,3 +66,13 @@ export const SPOKANE_RESOURCES = [
     neighborhood: 'North Side'
   }
 ];
+
+export const RECOVERY_MILESTONES = [
+  { id: '24h', label: '24 Hours', days: 1 },
+  { id: '1w', label: '1 Week', days: 7 },
+  { id: '1m', label: '1 Month', days: 30 },
+  { id: '3m', label: '3 Months', days: 90 },
+  { id: '6m', label: '6 Months', days: 180 },
+  { id: '9m', label: '9 Months', days: 270 },
+  { id: '1y', label: '1 Year', days: 365 },
+];
