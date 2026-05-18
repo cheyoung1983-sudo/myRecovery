@@ -1,9 +1,0 @@
-[build]
-  command = "npm run build"
-  publish = "dist"
-
-[build.environment]
-  # Firebase client config and Google Maps API keys are designed to be
-  # embedded in client-side code and are secured by Firebase security rules
-  # and API key domain restrictions respectively — not by keeping them secret.
-  SECRETS_SCAN_OMIT_KEYS = "apiKey,appId,authDomain,firestoreDatabaseId,measurementId,messagingSenderId,projectId,storageBucket,VITE_GOOGLE_MAPS_PLATFORM_KEY"
