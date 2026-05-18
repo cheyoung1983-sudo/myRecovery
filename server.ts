@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import rateLimit from "express-rate-limit";
 
 // Load Spokane resources to provide context to Gemini
 import { SPOKANE_RESOURCES } from "./src/constants";
@@ -77,8 +78,14 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
+    const spaFallbackLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 100, // limit each IP to 100 requests per window
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', spaFallbackLimiter, (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
