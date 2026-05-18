@@ -41,6 +41,7 @@ import { AdBanner } from './components/AdBanner';
 import { NativeAd } from './components/NativeAd';
 import { ProfileOnboarding } from './components/ProfileOnboarding';
 import { useRewardedAd } from './hooks/useRewardedAd';
+import { Analytics } from '@vercel/analytics/react';
 
 // New Components
 import { MeetingBuddyBeacon } from './components/MeetingBuddyBeacon';
@@ -2352,17 +2353,7 @@ export default function App() {
           <WarmHandshakeModal sponsor={reachingOutTo} onClose={() => setReachingOutTo(null)} onStartChat={(text) => handleStartChat(reachingOutTo, text)} />
         )}
       </AnimatePresence>
-
-      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] pointer-events-none flex flex-col gap-2 w-full max-w-xs px-6">
-        <AnimatePresence>
-          {notifications.map(n => (
-            <motion.div key={n.id} initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.9 }} className={`p-4 rounded-2xl shadow-2xl border flex items-center gap-3 backdrop-blur-xl ${n.type === 'success' ? 'bg-emerald-600/90 border-emerald-500 text-white' : n.type === 'alert' ? 'bg-rose-600/90 border-rose-500 text-white' : 'bg-[#1e293b]/90 border-slate-700 text-slate-100'}`}>
-              {n.type === 'success' ? <Check size={18} /> : n.type === 'alert' ? <AlertCircle size={18} /> : <Info size={18} />}
-              <span className="text-xs font-bold leading-tight">{n.text}</span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      <Analytics />
     </div>
     </APIProvider>
   );
