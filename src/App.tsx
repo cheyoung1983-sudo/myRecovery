@@ -3,11 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Phone, ShieldAlert, MapPin, Bus, Heart, 
@@ -22,6 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { 
   auth, db, googleProvider, OperationType, handleFirestoreError,
+  requestForToken, onMessage, messaging
 } from './lib/firebase';
 import { 
   signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser,
@@ -31,7 +27,7 @@ import {
 import { 
   doc, setDoc, onSnapshot, collection, query, where, orderBy, 
   serverTimestamp, updateDoc, addDoc, getDoc, getDocs, deleteDoc,
-  Timestamp, or
+  Timestamp, or, increment
 } from 'firebase/firestore';
 
 import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry } from './types';
@@ -46,6 +42,14 @@ import { NativeAd } from './components/NativeAd';
 import { ProfileOnboarding } from './components/ProfileOnboarding';
 import { useRewardedAd } from './hooks/useRewardedAd';
 import { Analytics } from '@vercel/analytics/react';
+
+// New Components
+import { MeetingBuddyBeacon } from './components/MeetingBuddyBeacon';
+import { NeighborhoodFeed } from './components/NeighborhoodFeed';
+import { AIReflectionCard } from './components/AIReflectionCard';
+import { SOSButton } from './components/SOSButton';
+import { TransitArrivals } from './components/TransitArrivals';
+import { SpokaneResources } from './components/SpokaneResources';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -219,15 +223,25 @@ const MeetingCard: React.FC<{ meeting: Meeting, onSelect: (m: Meeting) => void }
       className="bg-slate-800/40 border border-slate-800 p-5 rounded-3xl hover:border-blue-500/40 transition-all group shadow-sm hover:shadow-md"
     >
       <div className="flex justify-between items-start mb-3">
-        <span className={`text-[10px] font-black px-2 py-1 bg-slate-900 rounded border border-slate-700 ${meeting.fellowship === 'AA' ? 'text-blue-400' : 'text-purple-400'}`}>
-          {meeting.fellowship}
-        </span>
+        <div className="flex gap-2">
+          <span className={`text-[10px] font-black px-2 py-1 bg-slate-900 rounded border border-slate-700 ${meeting.fellowship === 'AA' ? 'text-blue-400' : 'text-purple-400'}`}>
+            {meeting.fellowship}
+          </span>
+          {meeting.format && (
+            <span className="text-[10px] font-black px-2 py-1 bg-blue-600/10 text-blue-400 rounded border border-blue-600/20 uppercase tracking-tight">
+              {meeting.format}
+            </span>
+          )}
+        </div>
         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{meeting.neighborhood}</span>
       </div>
       <h3 className="text-xl font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">{meeting.name}</h3>
       <div className="flex flex-col gap-1 mb-6 text-slate-400 text-sm">
         <p className="flex items-center gap-1.5"><Clock size={14} /> {meeting.day} at {meeting.time}</p>
         <p className="flex items-center gap-1.5 line-clamp-1"><MapPin size={14} /> {meeting.address}</p>
+        <div className="pt-2">
+          <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
+        </div>
       </div>
       <div className="flex gap-2.5">
         <a 
@@ -379,13 +393,17 @@ const MeetingMap = ({ lat, lng, name }: { lat: number, lng: number, name: string
   );
 };
 
-const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, onToggleReminder }: { 
+const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, onToggleReminder, onLogAttendance, attendance, userProfile, userId }: { 
   meeting: Meeting, 
   onClose: () => void, 
   sponsors: Sponsor[], 
   onConnect: (s: Sponsor) => void,
   reminders: string[],
-  onToggleReminder: (id: string) => void
+  onToggleReminder: (id: string) => void,
+  onLogAttendance: (m: Meeting) => void,
+  attendance: AttendanceRecord[],
+  userProfile: UserProfile | null,
+  userId: string
 }) => {
   const transitLink = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${meeting.address}, Spokane, WA`)}&travelmode=transit`;
 
@@ -456,9 +474,14 @@ const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, 
         <div className="p-8 pt-0 space-y-10">
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-blue-600 text-white text-[10px] font-black rounded-full uppercase tracking-widest shadow-sm">
-                {meeting.fellowship} • {meeting.format}
+              <span className={`px-3 py-1 text-white text-[10px] font-black rounded-full uppercase tracking-widest shadow-sm ${meeting.fellowship === 'AA' ? 'bg-blue-600' : 'bg-purple-600'}`}>
+                {meeting.fellowship}
               </span>
+              {meeting.format && (
+                <span className="px-3 py-1 bg-slate-800 text-slate-300 text-[10px] font-black rounded-full uppercase tracking-widest border border-slate-700 shadow-sm">
+                  {meeting.format}
+                </span>
+              )}
             </div>
             <h2 className="text-4xl font-black text-white tracking-tight">{meeting.name}</h2>
           </div>
@@ -486,6 +509,8 @@ const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, 
             </h4>
             
             <MeetingMap lat={meeting.lat} lng={meeting.lng} name={meeting.name} />
+
+            <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
 
             <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-3xl shadow-inner">
               <p className="text-lg text-slate-100 font-bold mb-1">{meeting.address}</p>
@@ -515,6 +540,30 @@ const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, 
               <span className="font-bold">{meeting.isOpen ? 'Open Meeting' : 'Closed Meeting'}</span>
             </div>
           </div>
+
+          {/* LOG ATTENDANCE BUTTON */}
+          <button 
+            onClick={() => onLogAttendance(meeting)}
+            disabled={attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0])}
+            className={`w-full py-6 rounded-[1.5rem] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${
+              attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0])
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-default'
+                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-900/40 active:scale-[0.98]'
+            }`}
+          >
+            {attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0]) ? (
+              <><Check size={24} /> Attendance Logged</>
+            ) : (
+              <><Calendar size={24} /> Log My Attendance</>
+            )}
+          </button>
+
+          {/* MEETING BUDDY BEACON */}
+          <MeetingBuddyBeacon 
+            meetingId={meeting.id} 
+            userId={userId} 
+            user={userProfile} 
+          />
 
           <div className="pt-6 border-t border-slate-800/50">
             <div className="bg-gradient-to-br from-blue-600/10 to-blue-900/10 border border-blue-500/20 p-8 rounded-[2rem] text-center shadow-sm">
@@ -713,11 +762,23 @@ const MoodLogger = ({ onLog }: { onLog: (mood: MoodEntry['mood'], note: string) 
 const RecoveryHub = ({ 
   daysSober, 
   moodLogs, 
-  onLogMood 
+  onLogMood,
+  userProfile,
+  topMatches,
+  onSponsorClick,
+  currentUser,
+  tab,
+  handleAIMentorMatch
 }: { 
   daysSober: number, 
   moodLogs: MoodEntry[], 
-  onLogMood: (mood: MoodEntry['mood'], note: string) => void 
+  onLogMood: (mood: MoodEntry['mood'], note: string) => void,
+  userProfile: UserProfile | null,
+  topMatches: { sponsor: Sponsor, score: number }[],
+  onSponsorClick: (sponsor: Sponsor) => void,
+  currentUser: FirebaseUser | null,
+  tab: string,
+  handleAIMentorMatch: () => void
 }) => {
   const milestones = [
     { label: '24 Hours', days: 1, icon: '🌟' },
@@ -728,29 +789,263 @@ const RecoveryHub = ({
     { label: '1 Year', days: 365, icon: '👑' },
   ];
 
+  const nextMilestone = milestones.find(m => daysSober < m.days) || milestones[milestones.length - 1];
+  const prevMilestoneDays = milestones.filter(m => daysSober >= m.days).pop()?.days || 0;
+  const progressToNext = ((daysSober - prevMilestoneDays) / (nextMilestone.days - prevMilestoneDays)) * 100;
+
+  // Calculate check-in streak (consecutive days of mood logs)
+  const streak = useMemo(() => {
+    if (moodLogs.length === 0) return 0;
+    const dates = new Set(moodLogs.map(log => {
+      const date = log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp 
+        ? (log.timestamp as any).toDate() 
+        : new Date();
+      return date.toISOString().split('T')[0];
+    }));
+    
+    let currentStreak = 0;
+    let checkDate = new Date();
+    
+    // If they haven't logged today, check from yesterday
+    if (!dates.has(checkDate.toISOString().split('T')[0])) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    while (dates.has(checkDate.toISOString().split('T')[0])) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+    return currentStreak;
+  }, [moodLogs]);
+
+  const points = userProfile?.points || 0;
+  const rank = points >= 1000 ? 'Mentor' : points >= 500 ? 'Guide' : points >= 100 ? 'Contributor' : 'Newcomer';
+  const rankColor = points >= 1000 ? 'text-amber-400' : points >= 500 ? 'text-blue-400' : points >= 100 ? 'text-emerald-400' : 'text-slate-400';
+
   return (
     <div className="space-y-8 pb-10">
-      {/* SOBRIETY CLOCK */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-10 rounded-[3rem] text-center shadow-2xl relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-          <Trophy size={120} />
-        </div>
-        <p className="text-blue-200 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Total Time in Recovery</p>
-        <div className="flex items-baseline justify-center gap-3">
-          <span className="text-7xl font-black text-white tracking-tighter drop-shadow-lg">{daysSober}</span>
-          <span className="text-2xl font-black text-blue-200 uppercase tracking-tighter italic">Days</span>
-        </div>
-        <div className="mt-8 pt-6 border-t border-blue-400/30 flex justify-between items-center px-4">
-          <div className="text-left">
-            <p className="text-[9px] text-blue-200 font-black uppercase">Current Streak</p>
-            <p className="text-sm font-bold text-white">Spokane Strong</p>
+      {/* PERSONALIZED WELCOME */}
+      {userProfile && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col md:flex-row items-center gap-6 bg-slate-900/50 p-6 rounded-[2.5rem] border border-slate-800"
+        >
+          <div className="w-20 h-20 bg-blue-600/10 rounded-3xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner relative">
+            <Sparkles size={40} />
+            <div className={`absolute -bottom-2 -right-2 px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[8px] font-black uppercase tracking-widest ${rankColor} shadow-xl`}>
+              {rank}
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-[9px] text-blue-200 font-black uppercase">Community Rank</p>
-            <p className="text-sm font-bold text-white">Consistent Guide</p>
+          <div className="text-center md:text-left space-y-1">
+            <h1 className="text-3xl font-black text-white italic uppercase tracking-tight">
+              Hey, {userProfile.name.split(' ')[0]}
+            </h1>
+            <p className="text-slate-400 text-sm font-medium">
+              Checking in from <span className="text-blue-400 font-bold">{userProfile.neighborhood}</span> today? 
+              {userProfile.recoveryNeeds.length > 0 && (
+                <> Focus: <span className="text-emerald-400 font-bold">{userProfile.recoveryNeeds[0]}</span></>
+              )}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* MAIN SOBRIETY DASHBOARD */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* BIG CLOCK */}
+        <div className="lg:col-span-2 bg-gradient-to-br from-blue-600 to-blue-800 p-8 rounded-[3rem] text-center shadow-2xl relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
+            <Trophy size={160} />
+          </div>
+          
+          <div className="relative z-10">
+            <p className="text-blue-200 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Recovery Journey</p>
+            <div className="flex items-baseline justify-center gap-3">
+              <span className="text-8xl font-black text-white tracking-tighter drop-shadow-xl">{daysSober}</span>
+              <span className="text-3xl font-black text-blue-200 uppercase tracking-tighter italic">Days</span>
+            </div>
+
+            {/* NEXT MILESTONE PROGRESS */}
+            <div className="mt-8 space-y-3">
+              <div className="flex justify-between items-end mb-1">
+                <span className="text-[10px] font-black text-blue-200 uppercase">Next Milestone: {nextMilestone.label}</span>
+                <span className="text-[10px] font-black text-white">{Math.floor(progressToNext)}%</span>
+              </div>
+              <div className="h-4 bg-blue-900/40 rounded-full overflow-hidden p-1 border border-blue-400/20">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressToNext}%` }}
+                  transition={{ duration: 1.5, ease: "easeOut" }}
+                  className="h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(52,211,153,0.5)]"
+                />
+              </div>
+              <p className="text-[9px] text-blue-100 font-bold italic opacity-75">
+                {nextMilestone.days - daysSober} days until you unlock {nextMilestone.icon} {nextMilestone.label}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-10 pt-8 border-t border-blue-400/30 grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Current Streak</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <span className="text-xl font-black text-white">{streak}</span>
+                <span className="text-[10px] font-bold text-orange-400 italic">🔥</span>
+              </div>
+            </div>
+            <div className="text-center border-x border-blue-400/20 px-4">
+              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Total Wins</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <span className="text-xl font-black text-white">{moodLogs.length}</span>
+                <span className="text-[10px] font-bold text-emerald-400">🛡️</span>
+              </div>
+            </div>
+            <div className="text-center">
+              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Community Points</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <span className="text-xl font-black text-white">{userProfile?.points || 0}</span>
+                <span className="text-[10px] font-bold text-amber-400">✨</span>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* AI REFLECTION CARD */}
+        {currentUser && (
+          <AIReflectionCard userId={currentUser.uid} moodLogs={moodLogs} />
+        )}
       </div>
+
+        {/* BADGES SECTION */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-xl font-black text-white italic uppercase tracking-tight flex items-center gap-2">
+              <Trophy className="text-amber-500" size={20} /> Achievement Tiers
+            </h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl space-y-3">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Badges</p>
+              <div className="flex flex-wrap gap-3">
+                {userProfile?.badges && userProfile.badges.length > 0 ? (
+                  userProfile.badges.map((badge, idx) => (
+                    <div key={idx} className="bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl flex items-center gap-2">
+                      <span className="text-lg">🏅</span>
+                      <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">{badge}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-slate-600 font-bold italic">No badges yet. Attend meetings to earn them!</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl space-y-4">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rank Progression</p>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[8px] font-black text-slate-500 uppercase">
+                  <span>Newcomer</span>
+                  <span>Contributor (100)</span>
+                  <span>Guide (500)</span>
+                  <span>Mentor (1000)</span>
+                </div>
+                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min((points / 1000) * 100, 100)}%` }}
+                    className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 font-bold italic">
+                  {points < 100 ? `${100 - points} points to Contributor` : 
+                   points < 500 ? `${500 - points} points to Guide` :
+                   points < 1000 ? `${1000 - points} points to Mentor` :
+                   "Maximum Rank Reached!"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* SMART MENTOR MATCHING */}
+      {tab === 'sponsors' && userProfile?.recoveryNeeds && userProfile.recoveryNeeds.length > 0 && (
+        <div className="px-6 mb-8">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+              <Sparkles size={100} />
+            </div>
+            <div className="relative z-10 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md border border-white/30">
+                  <Heart className="text-white" size={24} />
+                </div>
+                <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">AI Mentor Match</h3>
+              </div>
+              <p className="text-blue-100 text-sm font-medium leading-relaxed max-w-xs">
+                Let Gemini find the perfect mentor based on your recovery needs: 
+                <span className="font-bold"> {userProfile.recoveryNeeds.join(', ')}</span>.
+              </p>
+              <button 
+                onClick={handleAIMentorMatch}
+                className="px-8 py-4 bg-white text-blue-700 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-50 transition-all shadow-xl active:scale-95 flex items-center gap-2"
+              >
+                Find My Best Match <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEIGHBORHOOD FEED */}
+      {userProfile?.neighborhood && (
+        <NeighborhoodFeed 
+          neighborhood={userProfile.neighborhood} 
+          userId={currentUser?.uid || ''}
+          userProfile={userProfile}
+        />
+      )}
+
+      {/* RECOMMENDED SPONSORS */}
+      {topMatches.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-xl font-black text-white italic uppercase tracking-tight flex items-center gap-2">
+              <UserCheck className="text-blue-500" size={20} /> Top Mentor Matches
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {topMatches.map(({ sponsor, score }) => (
+              <button 
+                key={sponsor.id}
+                onClick={() => onSponsorClick(sponsor)}
+                className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] hover:border-blue-500/50 transition-all text-left group shadow-lg"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-12 h-12 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500">
+                    <BadgeCheck size={24} />
+                  </div>
+                  <div className="px-3 py-1 bg-blue-600/10 rounded-full">
+                    <span className="text-[10px] font-black text-blue-500 uppercase">{score > 4 ? 'Best' : 'Great'} Match</span>
+                  </div>
+                </div>
+                <h4 className="text-lg font-black text-white italic leading-tight mb-1">{sponsor.name}</h4>
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-4">{sponsor.neighborhood} • {sponsor.years}yrs Strong</p>
+                <div className="flex flex-wrap gap-1.5 line-clamp-1 mb-4">
+                  {sponsor.specialties.slice(0, 2).map(s => (
+                    <span key={s} className="px-2 py-0.5 bg-slate-800 rounded-md text-[9px] font-black text-slate-400 border border-slate-700 uppercase">{s}</span>
+                  ))}
+                </div>
+                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest group-hover:translate-x-1 transition-transform">Connect Now</span>
+                  <ChevronRight size={16} className="text-slate-700" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* MOOD TREND */}
@@ -784,7 +1079,7 @@ const RecoveryHub = ({
                      <div className="flex-1">
                        <p className="text-xs font-bold text-slate-100 line-clamp-1">{log.note || 'No note added'}</p>
                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">
-                         {log.timestamp instanceof Timestamp ? log.timestamp.toDate().toLocaleDateString() : 'Just now'}
+                         {log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp ? (log.timestamp as any).toDate().toLocaleDateString() : 'Just now'}
                        </p>
                      </div>
                    </div>
@@ -811,32 +1106,13 @@ const RecoveryHub = ({
                       : 'bg-slate-900/30 border-slate-800 grayscale'
                   }`}
                 >
-                  <div className="text-3xl mb-3">{m.icon}</div>
-                  <h4 className={`text-sm font-black uppercase tracking-tight ${isUnlocked ? 'text-white' : 'text-slate-600'}`}>
-                    {m.label}
-                  </h4>
-                  <p className="text-[9px] font-bold text-slate-500 mt-1 uppercase">
-                    {isUnlocked ? 'Achieved' : `${m.days - daysSober} days left`}
-                  </p>
-                  {isUnlocked && (
-                    <div className="absolute top-2 right-2">
-                      <BadgeCheck size={16} className="text-amber-500" />
-                    </div>
-                  )}
+                  <div className="text-3xl mb-2">{m.icon}</div>
+                  <h4 className="text-sm font-black text-white uppercase">{m.label}</h4>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase">{m.days} Days</p>
+                  {isUnlocked && <BadgeCheck size={16} className="absolute top-4 right-4 text-amber-500" />}
                 </div>
               );
             })}
-          </div>
-          
-          <div className="bg-slate-950/50 border border-slate-800 p-8 rounded-[2.5rem] flex items-center gap-6 group cursor-pointer hover:bg-slate-900 transition-all border-dashed">
-            <div className="p-4 bg-slate-900 rounded-2xl group-hover:bg-blue-600/10 transition-all">
-              <Calendar className="text-slate-500 group-hover:text-blue-500" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-300">Share Progress</h4>
-              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-tight">Generate recovery badge</p>
-            </div>
-            <ChevronRight className="ml-auto text-slate-700 group-hover:text-white" />
           </div>
         </div>
       </div>
@@ -844,28 +1120,151 @@ const RecoveryHub = ({
   );
 };
 
-// SponsorshipApplicationForm removed - now in a separate file
+const ChatView = ({ session, messages, currentUser, onBack, onSendMessage, onTyping }: { 
+  session: ChatSession, 
+  messages: Message[], 
+  currentUser: FirebaseUser | null,
+  onBack: () => void,
+  onSendMessage: (text: string) => void,
+  onTyping: (isTyping: boolean) => void
+}) => {
+  const [text, setText] = useState('');
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-const AISupportView = ({ currentUser }: { currentUser: any }) => {
-  const { isAdReady, showAd } = useRewardedAd();
-  const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([]);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (text.trim()) {
+      onSendMessage(text);
+      setText('');
+    }
+  };
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-[2.5rem] flex flex-col h-[70vh] overflow-hidden shadow-2xl relative">
+       <div className="p-6 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-[#0f172a]/95 backdrop-blur-md z-10">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full text-slate-400"><ArrowLeft size={20}/></button>
+            <div>
+              <h3 className="font-bold text-white leading-none mb-1">
+                {currentUser?.uid === session.userId ? session.mentorName : session.userName}
+              </h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
+                <ShieldCheck size={10} className="text-blue-500" /> Peer Support Connection
+              </p>
+            </div>
+          </div>
+       </div>
+
+       <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4 opacity-30">
+               <MessageCircle size={48} />
+               <p className="text-sm font-medium">Say hi to start your support journey.</p>
+            </div>
+          ) : (
+            messages.map((m, idx) => {
+              const isOwn = m.senderId === currentUser?.uid;
+              return (
+                <motion.div 
+                  initial={{ opacity: 0, x: isOwn ? 20 : -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  key={m.id || idx} 
+                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${isOwn ? 'bg-blue-600 text-white rounded-tr-none shadow-lg' : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'}`}>
+                    {m.text}
+                    {m.timestamp && (
+                      <p className={`text-[8px] mt-1 font-bold ${isOwn ? 'text-blue-200' : 'text-slate-500'}`}>
+                        {(m.timestamp as any)?.toDate?.() ? (m.timestamp as any).toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}
+                      </p>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+       </div>
+
+       <form onSubmit={handleSend} className="p-6 bg-[#0f172a]/95 border-t border-slate-800 flex gap-2">
+          <input 
+            type="text" 
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              onTyping(true);
+            }}
+            onBlur={() => onTyping(false)}
+            placeholder="Write a message..."
+            className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all text-white"
+          />
+          <button type="submit" className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 transition-all shadow-lg active:scale-95">
+            <Send size={20} />
+          </button>
+       </form>
+    </div>
+  );
+};
+
+const AISupportView = ({ currentUser, moodLogs }: { currentUser: FirebaseUser | null, moodLogs: MoodEntry[] }) => {
+  const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
+    { role: 'model', text: "Hello! I'm your Spokane Recovery Guide. How's your journey going today?" }
+  ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCrisis, setIsCrisis] = useState(false);
+  const [anxietyDetected, setAnxietyDetected] = useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Vibe Check Logic
+  useEffect(() => {
+    if (messages.length > 3 || moodLogs.length > 0) {
+      const checkMood = async () => {
+        try {
+          const res = await fetch('/api/ai/analyze-mood', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              moodLogs: moodLogs.slice(-5), 
+              chatHistory: messages.slice(-5) 
+            })
+          });
+          const data = await res.json();
+          if (data.triggerVibeCheck) {
+            setAnxietyDetected(true);
+            setMessages(prev => [...prev, { 
+              role: 'model', 
+              text: `⚠️ Vibe Check: ${data.recommendation}. Would you like to try a 1-minute grounding exercise?` 
+            }]);
+          }
+        } catch (e) {
+          console.error("Mood analysis failed");
+        }
+      };
+      const timer = setTimeout(checkMood, 15000); // Check after some interaction
+      return () => clearTimeout(timer);
+    }
+  }, [messages.length]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userText = input;
+    const userMsg = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userText }]);
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsLoading(true);
 
     try {
@@ -873,315 +1272,82 @@ const AISupportView = ({ currentUser }: { currentUser: any }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          prompt: userText,
-          history: messages 
+          prompt: userMsg, 
+          history: messages,
+          isCrisis 
         })
       });
       const data = await res.json();
       if (data.text) {
         setMessages(prev => [...prev, { role: 'model', text: data.text }]);
       }
-    } catch (err) {
-      console.error("AI Error:", err);
-      setMessages(prev => [...prev, { role: 'model', text: "I'm having a little trouble connecting right now. Please try again or reach out to a human mentor." }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'model', text: "I'm having a little trouble connecting. Check your local Spokane resources or reach out to a peer mentor!" }]);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col h-[calc(100vh-180px)] bg-slate-950 rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl"
-    >
-      {/* Header */}
-      <div className="p-6 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between">
+    <div className={`bg-slate-900/50 border rounded-[2.5rem] flex flex-col h-[70vh] overflow-hidden transition-all duration-500 ${isCrisis ? 'border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.2)]' : 'border-slate-800'}`}>
+      <div className="p-6 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-900/20">
-            <Sparkles className="text-white" size={20} />
-          </div>
+          <Sparkles className={isCrisis ? 'text-rose-500' : 'text-blue-500'} />
           <div>
-            <h3 className="font-black text-white text-base leading-none italic">Sober Spokane AI</h3>
-            <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest mt-1">24/7 Recovery Support</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isAdReady && (
-            <button 
-              onClick={showAd}
-              title="Watch a short ad to support our recovery mission"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/10 border border-rose-500/20 rounded-full text-rose-500 hover:bg-rose-600 hover:text-white transition-all group shadow-sm shadow-rose-900/10"
-            >
-              <Heart size={12} className="fill-current animate-pulse group-hover:animate-none" />
-              <span className="text-[9px] font-black uppercase tracking-widest leading-none">Support Us</span>
-            </button>
-          )}
-          <div className="hidden sm:block px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/50">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">Beta Guide</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4">
-            <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mb-6 animate-pulse">
-              <Sparkles className="text-blue-500" size={32} />
-            </div>
-            <h4 className="text-xl font-bold text-white mb-2">How can I help you today?</h4>
-            <p className="text-slate-500 text-xs max-w-xs leading-relaxed uppercase tracking-wider font-medium">
-              Ask about local resources, meeting types, or just chat if you're having a tough moment.
+            <h3 className="font-bold text-white">{isCrisis ? 'Crisis Assistant' : 'Recovery Guide'}</h3>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+              {isCrisis ? 'Safety Mode Active' : 'AI Assistance • Gemini'}
             </p>
-            <div className="grid grid-cols-1 gap-2 mt-8 w-full max-w-xs">
-              <button onClick={() => setInput("Where can I find detox resources?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">Where can I find detox?</button>
-              <button onClick={() => setInput("What's the difference between AA and NA?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">AA vs NA?</button>
-              <button onClick={() => setInput("I'm feeling a craving, what should I do?")} className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-[10px] font-bold text-slate-400 uppercase hover:bg-slate-800 transition-all">I'm having a craving</button>
-            </div>
+          </div>
+        </div>
+        <button 
+          onClick={() => setIsCrisis(!isCrisis)}
+          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCrisis ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+        >
+          {isCrisis ? 'Deactivate Crisis Mode' : 'I am in Crisis'}
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {isCrisis && messages.length === 1 && (
+          <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl mb-4">
+            <p className="text-xs text-rose-400 font-bold leading-relaxed">
+              🆘 Crisis mode active. I will prioritize immediate safety strategies and help you ground yourself. Remember you can call 988 at any time.
+            </p>
           </div>
         )}
-        
-        {messages.map((m, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${
-              m.role === 'user'
-                ? 'bg-blue-600 text-white rounded-tr-none'
-                : 'bg-slate-900 text-slate-100 border border-slate-800 rounded-tl-none'
-            }`}>
-              <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'}`}>
+              {m.text}
             </div>
-          </motion.div>
+          </div>
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl rounded-tl-none">
-              <div className="flex gap-1.5">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.1s]" />
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.2s]" />
-              </div>
+            <div className="bg-slate-800 p-4 rounded-2xl rounded-tl-none animate-pulse text-slate-500 italic text-xs">
+              Thinking...
             </div>
           </div>
         )}
+        <div ref={scrollRef} />
       </div>
-
-      {/* Input */}
-      <form onSubmit={handleSend} className="p-4 bg-slate-900/50 border-t border-slate-800">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your question..."
-            className="flex-1 bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all text-white"
-            disabled={isLoading}
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/20"
-          >
-            <Send size={20} />
-          </button>
-        </div>
-        <p className="text-[9px] text-slate-600 mt-2 text-center font-bold uppercase tracking-widest">
-          AI Guide can make mistakes. For crises, dial 988.
-        </p>
+      <form onSubmit={handleSend} className="p-6 border-t border-slate-800 flex gap-2">
+        <input 
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask about local resources, coping tips..."
+          className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 text-white"
+        />
+        <button type="submit" disabled={isLoading} className="p-4 bg-blue-600 text-white rounded-2xl disabled:opacity-50">
+          <Send size={20} />
+        </button>
       </form>
-    </motion.div>
+    </div>
   );
 };
-
-const ChatView = ({ session, messages, currentUser, onBack, onSendMessage, onTyping }: { session: any, messages: any[], currentUser: any, onBack: () => void, onSendMessage: (text: string) => void, onTyping: (isTyping: boolean) => void }) => {
-  const [message, setMessage] = useState('');
-  const [isTypingLocal, setIsTypingLocal] = useState(false);
-  const typingTimeoutRef = React.useRef<any>(null);
-
-  const partnerName = session.userId === currentUser?.uid ? (session.mentorName || 'Mentor') : (session.userName || 'Client');
-  const partnerId = session.userId === currentUser?.uid ? session.mentorUserId : session.userId;
-  const isPartnerTyping = session.typingStatus?.[partnerId] === true;
-
-  const partnerLastRead = session.lastRead?.[partnerId];
-  
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setMessage(e.target.value);
-    
-    if (!isTypingLocal) {
-      setIsTypingLocal(true);
-      onTyping(true);
-    }
-
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTypingLocal(false);
-      onTyping(false);
-    }, 2000);
-  };
-
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (message.trim()) {
-      onSendMessage(message);
-      setMessage('');
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      setIsTypingLocal(false);
-      onTyping(false);
-    }
-  };
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="flex flex-col h-[calc(100vh-140px)] bg-slate-900/50 rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl"
-    >
-      {/* CHAT HEADER */}
-      <div className="p-5 border-b border-slate-800 bg-slate-900 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-white"><ArrowLeft size={20}/></button>
-          <div className="w-10 h-10 bg-blue-600/20 rounded-xl flex items-center justify-center font-bold text-blue-400 uppercase italic">
-            {partnerName ? partnerName[0] : '?'}
-          </div>
-          <div>
-            <h3 className="font-bold text-white text-sm leading-none">{partnerName}</h3>
-            <div className="flex items-center gap-1.5 mt-1">
-               {isPartnerTyping ? (
-                 <span className="text-[10px] text-blue-400 font-black uppercase animate-pulse">Typing...</span>
-               ) : (
-                 <span className="text-[10px] text-emerald-500 font-black uppercase tracking-widest leading-none">Healthy Connection</span>
-               )}
-            </div>
-          </div>
-        </div>
-        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full border border-slate-700/50">
-          <BadgeCheck size={14} className="text-blue-500" />
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Verified Account</span>
-        </div>
-      </div>
-
-      {/* MESSAGES */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
-        <motion.div 
-          className="space-y-4"
-          initial="hidden"
-          animate="visible"
-          variants={{
-            visible: { transition: { staggerChildren: 0.05 } }
-          }}
-        >
-          {messages.map((m, idx) => {
-            const isMe = m.senderId === currentUser?.uid;
-            const isLast = idx === messages.length - 1;
-            
-            return (
-              <motion.div 
-                key={m.id} 
-                variants={{
-                  hidden: { opacity: 0, y: 10, scale: 0.95 },
-                  visible: { opacity: 1, y: 0, scale: 1 }
-                }}
-                className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-[85%] group`}>
-                  <div className={`p-4 rounded-2xl text-sm ${
-                    isMe 
-                      ? 'bg-blue-600 text-white rounded-tr-none shadow-lg shadow-blue-900/20' 
-                      : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none'
-                  }`}>
-                    <p className="leading-relaxed font-medium">{m.text}</p>
-                    <div className="mt-1 flex items-center justify-end gap-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[8px] font-black uppercase">
-                        {m.timestamp}
-                      </span>
-                    </div>
-                  </div>
-                  {isMe && isLast && partnerLastRead && (
-                    <div className="mt-1 flex justify-end">
-                       <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1">
-                         <ShieldCheck size={10} className="text-blue-500" /> Seen
-                       </span>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-        
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center p-10 opacity-50">
-            <MessageCircle size={48} className="text-slate-700 mb-4" />
-            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Safe Space</p>
-            <p className="text-[10px] text-slate-600 mt-2 max-w-[200px] mx-auto uppercase leading-tight font-bold">Your conversation is confidential and anonymous.</p>
-          </div>
-        )}
-      </div>
-
-      {/* INPUT */}
-      <form onSubmit={handleSend} className="p-5 bg-slate-900 border-t border-slate-800">
-        <div className="flex gap-3">
-          <input 
-            type="text"
-            value={message}
-            onChange={handleInputChange}
-            placeholder="Type your message..."
-            className="flex-1 bg-slate-950 border border-slate-800 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all font-medium text-white shadow-inner"
-          />
-          <button 
-            type="submit"
-            disabled={!message.trim()}
-            className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-95 disabled:opacity-50"
-          >
-            <Send size={24} />
-          </button>
-        </div>
-      </form>
-    </motion.div>
-  );
-};
-
-// --- MAIN APPLICATION ---
 
 export default function App() {
-  if (!hasValidKey) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl text-center">
-          <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-blue-500">
-            <ShieldAlert size={32} />
-          </div>
-          <h2 className="text-2xl font-black text-white tracking-tight mb-4 uppercase italic">Maps API Key Required</h2>
-          <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-            To view meeting locations on the interactive map, you need to add your Google Maps API key to the project secrets.
-          </p>
-          <div className="space-y-4 text-left mb-8">
-            <div className="flex gap-4">
-              <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px] font-black text-blue-400 shrink-0">1</div>
-              <p className="text-xs text-slate-400 font-medium">Get an API key from the <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">Google Cloud Console</a>.</p>
-            </div>
-            <div className="flex gap-4">
-              <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px] font-black text-blue-400 shrink-0">2</div>
-              <p className="text-xs text-slate-400 font-medium">Open <b>Settings</b> (⚙️ gear icon) &rarr; <b>Secrets</b>.</p>
-            </div>
-            <div className="flex gap-4">
-              <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-[10px] font-black text-blue-400 shrink-0">3</div>
-              <p className="text-xs text-slate-400 font-medium">Add <code>GOOGLE_MAPS_PLATFORM_KEY</code> and paste your key.</p>
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">App will rebuild automatically upon entry</p>
-        </div>
-      </div>
-    );
-  }
-
-  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub'>('meetings');
+  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -1189,12 +1355,39 @@ export default function App() {
   
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [userNeeds, setUserNeeds] = useState<string[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [sobrietyDate, setSobrietyDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('All');
+
+  useEffect(() => {
+    if (userProfile?.neighborhood && selectedNeighborhood === 'All') {
+      setSelectedNeighborhood(userProfile.neighborhood);
+    }
+  }, [userProfile?.neighborhood]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setAttendance([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'users', currentUser.uid, 'attendance'),
+      orderBy('date', 'desc')
+    );
+
+    return onSnapshot(q, (snapshot) => {
+      const records = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as AttendanceRecord[];
+      setAttendance(records);
+    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}/attendance`));
+  }, [currentUser]);
+
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [reachingOutTo, setReachingOutTo] = useState<Sponsor | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1227,6 +1420,23 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [allUserProfiles, setAllUserProfiles] = useState<(UserProfile & { uid: string })[]>([]);
+
+  useEffect(() => {
+    if (messaging) {
+      const unsubscribe = onMessage(messaging, (payload) => {
+        console.log('Message received. ', payload);
+        if (payload.notification) {
+          triggerSystemNotification(
+            payload.notification.title || 'New Message',
+            payload.notification.body || ''
+          );
+        }
+      });
+      return unsubscribe;
+    }
+  }, []);
 
   const incompleteProfile = useMemo(() => {
     if (!userProfile) return false;
@@ -1234,14 +1444,6 @@ export default function App() {
   }, [userProfile]);
 
   const isMentor = useMemo(() => userProfile?.role === 'mentor', [userProfile]);
-
-  useEffect(() => {
-    if (currentUser && userProfile && incompleteProfile && !isAuthLoading) {
-      setShowOnboarding(true);
-    } else {
-      setShowOnboarding(false);
-    }
-  }, [currentUser, userProfile, incompleteProfile, isAuthLoading]);
 
   const activeChat = useMemo(() => {
     return chatSessions.find(s => s.id === activeChatId);
@@ -1252,9 +1454,19 @@ export default function App() {
     return sponsors.find(s => s.id === activeChat.sponsorId);
   }, [activeChat, sponsors]);
 
+  const unreadCount = useMemo(() => {
+    return chatSessions.filter(s => {
+      if (!currentUser) return false;
+      const lastRead = s.lastRead?.[currentUser.uid] || 0;
+      const lastMsgAt = s.lastMessageAt instanceof Timestamp ? s.lastMessageAt.toMillis() : s.lastMessageAt;
+      return lastMsgAt > lastRead;
+    }).length;
+  }, [chatSessions, currentUser]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      setIsAuthLoading(false);
       if (user) {
         setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
@@ -1263,20 +1475,16 @@ export default function App() {
           if (!userDoc.exists()) {
             const profile: UserProfile = {
               email: user.email || '',
-              name: user.displayName || 'Spokane Neighbor',
+              name: user.displayName || 'Anonymous Player',
               photoURL: user.photoURL || '',
-              role: user.email === SUPER_ADMIN_EMAIL ? 'admin' : 'user',
               sobrietyDate: new Date().toISOString().split('T')[0],
               recoveryNeeds: [],
-              neighborhood: '' // Initialize as empty
+              role: 'user'
             };
             await setDoc(userDocRef, profile);
             setUserProfile(profile);
-            if (profile.role === 'admin') setIsSuperAdmin(true);
           } else {
-            const data = userDoc.data() as UserProfile;
-            setUserProfile(data);
-            if (data.role === 'admin') setIsSuperAdmin(true);
+            setUserProfile(userDoc.data() as UserProfile);
           }
         } catch (e) {
           handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
@@ -1285,156 +1493,74 @@ export default function App() {
         setUserProfile(null);
         setIsSuperAdmin(false);
       }
-      setIsAuthLoading(false);
     });
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
-    if (isAuthLoading || !currentUser) return;
-
-    // Sync User Profile - Always loaded first
-    const unsubProfile = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as UserProfile;
-        setUserProfile(data);
-        setSobrietyDate(data.sobrietyDate || new Date().toISOString().split('T')[0]);
-        setUserNeeds(data.recoveryNeeds || []);
-        
-        // Safety check for super admin status
-        if (data.role === 'admin') {
-          setIsSuperAdmin(true);
-        }
-      }
-    }, (error) => {
-      if (error.code !== 'permission-denied') {
-        handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
-      }
+    const q = query(collection(db, 'meetings'), orderBy('name', 'asc'));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Meeting[];
+      setMeetings(list.length > 0 ? list : INITIAL_MEETINGS);
     });
-
-    // Sync Meetings
-    const unsubMeetings = onSnapshot(collection(db, 'meetings'), (snap) => {
-      const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-      setMeetings(docs);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'meetings'));
-
-    // Wait for profile if we want to ensure admin status is correct for these specific queries
-    // Though sponsors query works for anyone, we follow user's "completely loaded" directive.
-    let unsubSponsors = () => {};
-    let unsubChats = () => {};
-    let unsubAttendance = () => {};
-    let unsubMoods = () => {};
-
-    if (userProfile) {
-      // Sync Sponsors (Mentors)
-      const sponsorsQuery = isSuperAdmin 
-        ? collection(db, 'sponsors') 
-        : query(collection(db, 'sponsors'), or(where('status', '==', 'verified'), where('userId', '==', currentUser.uid)));
-        
-      unsubSponsors = onSnapshot(sponsorsQuery, (snap) => {
-        const docs = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-        setSponsors(docs);
-      }, (error) => handleFirestoreError(error, OperationType.GET, 'sponsors'));
-
-      // Sync Attendance
-      unsubAttendance = onSnapshot(
-        query(collection(db, 'users', currentUser.uid, 'attendance'), orderBy('date', 'desc')),
-        (snap) => {
-          setAttendance(snap.docs.map(d => d.data()) as any);
-        },
-        (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/attendance`)
-      );
-
-      // Sync Chats (User as Client OR User as Sponsor)
-      const chatsQuery = query(
-        collection(db, 'chats'),
-        or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid))
-      );
-      
-      unsubChats = onSnapshot(chatsQuery, (snap) => {
-        const allMyChats = snap.docs.map(d => ({ ...d.data(), id: d.id })) as any;
-        setChatSessions(allMyChats);
-      }, (error) => handleFirestoreError(error, OperationType.GET, 'chats'));
-
-      // Sync Mood Logs
-      const unsubMoodsSync = onSnapshot(
-        query(collection(db, 'users', currentUser.uid, 'moodLogs'), orderBy('timestamp', 'desc')),
-        (snap) => {
-          setMoodLogs(snap.docs.map(d => ({ ...d.data(), id: d.id })) as MoodEntry[]);
-        },
-        (error) => handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}/moodLogs`)
-      );
-      unsubMoods = unsubMoodsSync;
-    }
-
-    return () => {
-      unsubProfile();
-      unsubMeetings();
-      unsubSponsors();
-      unsubAttendance();
-      unsubChats();
-      unsubMoods();
-    };
-  }, [currentUser, isSuperAdmin, isAuthLoading, userProfile?.role, userProfile]); // Re-run when profile/role is stable
-
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  const unreadCount = useMemo(() => {
-    if (!currentUser) return 0;
-    return chatSessions.filter(c => {
-      const lastRead = c.lastRead?.[currentUser.uid];
-      const lastMessageAt = c.lastMessageAt;
-      if (!lastMessageAt) return false;
-      if (!lastRead) return true;
-      try {
-        const lastReadMillis = typeof lastRead.toMillis === 'function' ? lastRead.toMillis() : new Date(lastRead).getTime();
-        const lastMsgMillis = typeof lastMessageAt.toMillis === 'function' ? lastMessageAt.toMillis() : new Date(lastMessageAt).getTime();
-        return lastMsgMillis > lastReadMillis;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-  }, [chatSessions, currentUser]);
+  }, []);
 
   useEffect(() => {
-    if (!activeChatId || !currentUser) return;
+    const q = query(collection(db, 'sponsors'));
+    return onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sponsor[];
+      setSponsors(list.length > 0 ? list : INITIAL_SPONSORS);
+    });
+  }, []);
 
-    // Update read receipt
-    const updateReadReceipt = async () => {
-      try {
-        await updateDoc(doc(db, 'chats', activeChatId), {
-          [`lastRead.${currentUser.uid}`]: serverTimestamp()
-        });
-      } catch (e) {
-        console.error("Failed to update read receipt:", e);
-      }
-    };
-    updateReadReceipt();
-
-    const unsubMessages = onSnapshot(
-      query(collection(db, 'chats', activeChatId, 'messages'), orderBy('timestamp', 'asc')),
-      (snap) => {
-        setMessages(snap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            senderId: data.senderId,
-            text: data.text,
-            timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'
-          };
-        }));
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, `chats/${activeChatId}/messages`)
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'chats'), 
+      or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid)),
+      orderBy('lastMessageAt', 'desc')
     );
+    return onSnapshot(q, (snap) => {
+      setChatSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatSession)));
+    });
+  }, [currentUser]);
 
-    return () => unsubMessages();
+  useEffect(() => {
+    if (!activeChatId) {
+      setMessages([]);
+      return;
+    }
+    const q = query(collection(db, 'chats', activeChatId, 'messages'), orderBy('timestamp', 'asc'));
+    return onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
+    });
   }, [activeChatId]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, 'users', currentUser.uid, 'moodLogs'), orderBy('timestamp', 'desc'));
+    return onSnapshot(q, (snap) => {
+      setMoodLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as MoodEntry)));
+    });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    const q = query(collection(db, 'users'));
+    return onSnapshot(q, (snap) => {
+      setAllUserProfiles(snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile & { uid: string })));
+    });
+  }, [isSuperAdmin]);
+
+  const triggerSystemNotification = (title: string, body: string) => {
+    showToast(`${title}: ${body}`, "info");
+  };
 
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login failed:", error);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'auth');
     }
   };
 
@@ -1443,8 +1569,8 @@ export default function App() {
     setAuthError('');
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (error: any) {
-      setAuthError(error.message);
+    } catch (e: any) {
+      setAuthError(e.message);
     }
   };
 
@@ -1452,30 +1578,11 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCredential.user);
-      setResetSent(true); // Reuse this state to show the email sent message on the auth screen
-    } catch (error: any) {
-      setAuthError(error.message);
-    }
-  };
-
-  const handleResendVerification = async () => {
-    if (currentUser) {
-      try {
-        await sendEmailVerification(currentUser);
-        alert('Verification email resent!');
-      } catch (error: any) {
-        setAuthError(error.message);
-      }
-    }
-  };
-
-  const checkVerification = async () => {
-    if (currentUser) {
-      await currentUser.reload();
-      // Forces a re-render because currentUser object changes internally or we can trigger it
-      window.location.reload(); 
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCred.user);
+      setResetSent(true);
+    } catch (e: any) {
+      setAuthError(e.message);
     }
   };
 
@@ -1485,173 +1592,70 @@ export default function App() {
     try {
       await sendPasswordResetEmail(auth, email);
       setResetSent(true);
-    } catch (error: any) {
-      setAuthError(error.message);
+    } catch (e: any) {
+      setAuthError(e.message);
     }
   };
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    setTab('meetings');
-  };
+  const handleLogout = () => signOut(auth);
 
-  const triggerSystemNotification = (title: string, body: string) => {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      if (swRegistration) {
-        swRegistration.showNotification(title, {
-          body,
-          icon: '/favicon.ico', // Standard placeholder or real icon if available
-          vibrate: [200, 100, 200]
-        });
-      } else {
-        new Notification(title, { body });
+  const handleResendVerification = async () => {
+    if (currentUser) {
+      setVerificationLoading(true);
+      try {
+        await sendEmailVerification(currentUser);
+        setVerificationSent(true);
+        showToast("Verification email sent!", "success");
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'auth');
+      } finally {
+        setVerificationLoading(false);
       }
     }
-    // Provide in-app feedback as well
-    showToast(`${title}: ${body}`, "info");
   };
 
-  const [allUserProfiles, setAllUserProfiles] = useState<UserProfile[]>([]);
-
-  useEffect(() => {
-    if (!isSuperAdmin) {
-      setAllUserProfiles([]);
-      return;
-    }
-    const unsubAllProfiles = onSnapshot(collection(db, 'users'), (snap) => {
-      setAllUserProfiles(snap.docs.map(d => ({ ...d.data(), uid: d.id })) as (UserProfile & { uid: string })[]);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'users'));
-    return () => unsubAllProfiles();
-  }, [isSuperAdmin]);
-
-  const handleSendVerification = async () => {
-    if (!currentUser) return;
-    setVerificationLoading(true);
-    try {
-      await sendEmailVerification(currentUser);
-      setVerificationSent(true);
-      triggerSystemNotification('Verification Sent', 'Please check your inbox (and spam folder).');
-    } catch (e: any) {
-      triggerSystemNotification('Error', 'Failed to send verification. Please try again later.');
-    } finally {
-      setVerificationLoading(false);
+  const checkVerification = async () => {
+    if (currentUser) {
+      await currentUser.reload();
+      setCurrentUser({ ...auth.currentUser! });
     }
   };
-
-  useEffect(() => {
-    // Check reminders every minute
-    const interval = setInterval(() => {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-
-      reminders.forEach(id => {
-        const meeting = meetings.find(m => m.id === String(id) || m.id === Number(id));
-        if (!meeting) return;
-
-        // Parse time like " Every Monday @ 6:00 PM "
-        const parts = meeting.time.split(' @ ');
-        if (parts.length !== 2) return;
-        
-        const day = parts[0].replace('Every ', '');
-        const timeStr = parts[1]; // "6:00 PM"
-        
-        if (day === currentDay) {
-          const [time, period] = timeStr.split(' ');
-          let [hours, minutes] = time.split(':').map(Number);
-          if (period === 'PM' && hours !== 12) hours += 12;
-          if (period === 'AM' && hours === 12) hours = 0;
-
-          // Notify if meeting is exactly in 30 minutes
-          const meetingTimeInMinutes = hours * 60 + minutes;
-          const currentTimeInMinutes = currentHour * 60 + currentMinute;
-          const timeUntilMeeting = meetingTimeInMinutes - currentTimeInMinutes;
-          
-          if (timeUntilMeeting === 30 || timeUntilMeeting === 5) {
-            const notificationId = `rem_${id}_${now.toDateString()}_${timeUntilMeeting}`;
-            setNotifications(prev => {
-              if (prev.find(n => n.id === notificationId)) return prev;
-              
-              const text = `Reminder: ${meeting.name} starts in ${timeUntilMeeting} minutes!`;
-              triggerSystemNotification('Upcoming Meeting', text);
-              return [...prev, { id: notificationId, text }];
-            });
-          }
-        }
-      });
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [reminders, swRegistration]);
 
   const daysSober = useMemo(() => {
-    const start = new Date(sobrietyDate);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - start.getTime());
+    if (!userProfile?.sobrietyDate) return 0;
+    const start = new Date(userProfile.sobrietyDate);
+    const today = new Date();
+    const diffTime = Math.abs(today.getTime() - start.getTime());
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  }, [sobrietyDate]);
+  }, [userProfile?.sobrietyDate]);
 
-  useEffect(() => {
-    if (tab === 'admin') {
-      setAdminNotifications(0);
-    }
-  }, [tab]);
-
-  const filteredMeetings = useMemo(() => {
-    return meetings.filter(m => {
-      const matchNeighborhood = selectedNeighborhood === 'All' || m.neighborhood === selectedNeighborhood;
-      const matchSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchNeighborhood && matchSearch;
-    });
-  }, [meetings, selectedNeighborhood, searchQuery]);
-
-  const handleVerifySponsor = async (id: string | number) => {
-    if (!isSuperAdmin) {
-      triggerSystemNotification('Access Denied', 'Only the Super Admin can verify mentors.');
-      return;
-    }
+  const handleUpdateSponsor = async (id: string, updates: Partial<Sponsor>) => {
     try {
-      await updateDoc(doc(db, 'sponsors', String(id)), {
-        status: 'verified',
-        isVerified: true
-      });
-      triggerSystemNotification('Mentor Verified', 'Application approved and mentor added to directory.');
+      await updateDoc(doc(db, 'sponsors', id), updates);
+      showToast("Profile Updated!", "success");
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `sponsors/${id}`);
     }
+  };
+
+  const handleVerifySponsor = async (id: string) => {
+    if (!currentUser) return;
+    await handleUpdateSponsor(id, { 
+      isVerified: true, 
+      status: 'verified',
+      verifiedAt: serverTimestamp(),
+      verifiedBy: currentUser.email || currentUser.uid
+    });
   };
 
   const handleRejectSponsor = async (id: string) => {
-    if (!isSuperAdmin) return;
-    try {
-      await updateDoc(doc(db, 'sponsors', id), {
-        status: 'rejected',
-        isVerified: false
-      });
-      triggerSystemNotification('Mentor Rejected', 'Application was declined.');
-    } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `sponsors/${id}`);
-    }
-  };
-
-  const startEditingSponsor = (sponsor: Sponsor) => {
-    setIsEditingProfile(sponsor.id);
-    setEditBio(sponsor.bio || '');
-    setEditSpecialties(sponsor.specialties || []);
-  };
-
-  const handleUpdateProfile = async (id: string | number) => {
-    try {
-      await updateDoc(doc(db, 'sponsors', String(id)), {
-        bio: editBio,
-        specialties: editSpecialties
-      });
-      setIsEditingProfile(null);
-      triggerSystemNotification('Profile Updated', 'Your changes have been saved successfully.');
-    } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `sponsors/${id}`);
-    }
+    if (!currentUser) return;
+    await handleUpdateSponsor(id, { 
+      isVerified: false, 
+      status: 'rejected',
+      verifiedAt: serverTimestamp(),
+      verifiedBy: currentUser.email || currentUser.uid
+    });
   };
 
   const toggleEditSpecialty = (spec: string) => {
@@ -1660,23 +1664,11 @@ export default function App() {
     );
   };
 
-  const handleLogAttendance = async (meetingId: string | number) => {
-    if (!currentUser) return;
-    try {
-      await addDoc(collection(db, 'users', currentUser.uid, 'attendance'), {
-        meetingId: String(meetingId),
-        date: new Date().toISOString().split('T')[0]
-      });
-      showToast("Meeting logged! Consistency is key.", "success");
-    } catch (e) {
-      handleFirestoreError(e, OperationType.CREATE, `users/${currentUser.uid}/attendance`);
-    }
-  };
-
   const handleApplySponsor = async (app: Omit<Sponsor, 'id' | 'isVerified' | 'status' | 'userId'>) => {
     if (!currentUser) return;
     if (!currentUser.emailVerified) {
-      triggerSystemNotification('Access Denied', 'Please verify your email before applying as a mentor.');
+      showToast("Verification required to apply", "alert");
+      handleResendVerification();
       return;
     }
     try {
@@ -1701,7 +1693,6 @@ export default function App() {
     }
 
     try {
-      // Check if chat exists
       const chatsRef = collection(db, 'chats');
       const q = query(chatsRef, where('userId', '==', currentUser.uid), where('sponsorId', '==', String(sponsor.id)));
       const snap = await getDocs(q);
@@ -1737,6 +1728,11 @@ export default function App() {
 
   const handleLogMood = async (mood: MoodEntry['mood'], note: string) => {
     if (!currentUser) return;
+    if (!currentUser.emailVerified) {
+      showToast("Verification required to log mood", "alert");
+      handleResendVerification();
+      return;
+    }
     try {
       await addDoc(collection(db, 'users', currentUser.uid, 'moodLogs'), {
         userId: currentUser.uid,
@@ -1768,14 +1764,34 @@ export default function App() {
     );
   };
 
+  const handleEnableNotifications = async () => {
+    if (!currentUser) return;
+    const token = await requestForToken();
+    if (token) {
+      try {
+        await updateDoc(doc(db, 'users', currentUser.uid), {
+          fcmToken: token,
+          notificationsEnabled: true
+        });
+        setNotificationPermission('granted');
+        showToast("Push notifications enabled!", "success");
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
+      }
+    } else {
+      showToast("Could not enable notifications. Please check site settings.", "alert");
+    }
+  };
+
   const handleRequestPermission = () => {
     if ('Notification' in window) {
-      Notification.requestPermission().then((perm) => {
-        setNotificationPermission(perm);
-        if (perm === 'granted') {
-          triggerSystemNotification('Notifications Enabled', 'You will now receive alerts for messages and meetings.');
-        }
-      });
+      if (Notification.permission === 'default') {
+        handleEnableNotifications();
+      } else if (Notification.permission === 'granted') {
+        handleEnableNotifications();
+      } else {
+        showToast("Notifications are blocked in your browser settings.", "alert");
+      }
     }
   };
 
@@ -1806,7 +1822,7 @@ export default function App() {
         [`typingStatus.${currentUser.uid}`]: isTyping
       });
     } catch (e) {
-      // Ignore typing update errors to prevent UI noise
+      // Ignore
     }
   };
 
@@ -1817,6 +1833,21 @@ export default function App() {
       await updateDoc(doc(db, 'users', currentUser.uid), {
         recoveryNeeds: newNeeds
       });
+      setUserNeeds(newNeeds);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
+    }
+  };
+
+  const handleUpdateSobrietyDate = async (date: string) => {
+    if (!currentUser) return;
+    setSobrietyDate(date);
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        sobrietyDate: date
+      });
+      setUserProfile(prev => prev ? { ...prev, sobrietyDate: date } : prev);
+      showToast("Sobriety date updated!", "success");
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
     }
@@ -1835,23 +1866,105 @@ export default function App() {
     }
   };
 
+  const handleUpdateProfile = async (updates: Partial<UserProfile>) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), updates);
+      setUserProfile(prev => prev ? { ...prev, ...updates } : prev);
+      showToast("Profile updated!", "success");
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.uid}`);
+    }
+  };
+
+  const handleAIMentorMatch = async () => {
+    if (!userProfile?.recoveryNeeds || sponsors.length === 0) return;
+    showToast("Analyzing community members...", "info");
+    try {
+      const response = await fetch('/api/ai/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userNeeds: userProfile.recoveryNeeds, 
+          mentors: sponsors.map(s => ({ id: s.id, name: s.name, bio: s.bio, specialties: s.specialties }))
+        })
+      });
+      if (!response.ok) throw new Error('Match failed');
+      const data = await response.json();
+      
+      const matchText = data.match;
+      const matchedSponsor = sponsors.find(s => matchText.includes(s.id) || matchText.includes(s.name));
+      
+      if (matchedSponsor) {
+        setReachingOutTo(matchedSponsor);
+        showToast(`AI Recommends: ${matchedSponsor.name}`, "success");
+      } else {
+        triggerSystemNotification("AI Recommendation", matchText);
+      }
+    } catch (e) {
+      showToast("Could not complete matching", "alert");
+    }
+  };
+
+  const handleLogAttendance = async (meeting: Meeting) => {
+    if (!currentUser) {
+      showToast("Please sign in to log attendance", "alert");
+      return;
+    }
+
+    if (!currentUser.emailVerified) {
+      showToast("Verification required to log attendance", "alert");
+      handleResendVerification();
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const alreadyLogged = attendance.some(a => a.meetingId === meeting.id && a.date === today);
+    if (alreadyLogged) {
+      showToast("Already logged this meeting today!", "info");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'users', currentUser.uid, 'attendance'), {
+        meetingId: meeting.id,
+        meetingName: meeting.name,
+        date: today,
+        timestamp: serverTimestamp()
+      });
+
+      // Award Community Points
+      if (userProfile && currentUser) {
+        const newPoints = (userProfile.points || 0) + 10;
+        const newBadges = [...(userProfile.badges || [])];
+        
+        // Potential badge award
+        // Fetch total attendance count to see if they reached 5
+        const attendanceSnap = await getDocs(collection(db, 'users', currentUser.uid, 'attendance'));
+        if (attendanceSnap.size >= 5 && !newBadges.includes('Meeting Warrior')) {
+          newBadges.push('Meeting Warrior');
+          showToast("Achievement Unlocked: Meeting Warrior! 🛡️", "success");
+        }
+
+        await updateDoc(doc(db, 'users', currentUser.uid), {
+          points: increment(10),
+          badges: newBadges
+        });
+        showToast("Logged! +10 Community Points", "success");
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/attendance`);
+    }
+  };
+
   const topMatches = useMemo(() => {
     if (userNeeds.length === 0) return [];
-    
     return sponsors
       .filter(s => s.status === 'verified')
       .map(s => {
         let score = 0;
-        // Check specialties
-        userNeeds.forEach(need => {
-          if (s.specialties.includes(need)) score += 2;
-        });
-
-        // Neighborhood matching (Spokane specific logic)
-        if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) {
-          score += 3; // Significant boost for local proximity
-        }
-        
+        userNeeds.forEach(need => { if (s.specialties.includes(need)) score += 2; });
+        if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) score += 3;
         return { sponsor: s, score };
       })
       .filter(m => m.score > 0)
@@ -1859,1034 +1972,365 @@ export default function App() {
       .slice(0, 3);
   }, [sponsors, userNeeds, userProfile?.neighborhood]);
 
-  const handleAddMeeting = async () => {
-    if (!isSuperAdmin) return;
-    try {
-      const newMeeting = {
-        name: "New Recovery Session",
-        neighborhood: "Downtown",
-        address: "123 Recovery Way, Spokane, WA",
-        time: "Every Monday @ 7:00 PM",
-        day: "Monday",
-        fellowship: "AA",
-        lat: 47.6588,
-        lng: -117.4260,
-        createdAt: serverTimestamp()
-      };
-      await addDoc(collection(db, 'meetings'), newMeeting);
-      triggerSystemNotification('System Update', 'New meeting added to the directory.');
-    } catch (e) {
-      handleFirestoreError(e, OperationType.CREATE, 'meetings');
-    }
-  };
-
-  const handleDeleteMeeting = async (id: string | number) => {
-    if (!isSuperAdmin) return;
-    try {
-      await deleteDoc(doc(db, 'meetings', String(id)));
-      triggerSystemNotification('Security Alert', 'A meeting has been removed by Admin.');
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `meetings/${id}`);
-    }
-  };
-
-  const handleBroadcastAlert = () => {
-    triggerSystemNotification('GLOBAL ALERT', 'Urgent recovery update from Spokane Admin. Check resources.');
-  };
+  const filteredMeetings = useMemo(() => {
+    return meetings.filter(m => {
+      const matchSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          m.neighborhood.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchNeighborhood = selectedNeighborhood === 'All' || m.neighborhood === selectedNeighborhood;
+      return matchSearch && matchNeighborhood;
+    });
+  }, [meetings, searchQuery, selectedNeighborhood]);
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
       <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-28 font-sans selection:bg-blue-500 selection:text-white">
-      {/* BACKGROUND ACCENTS */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden opacity-30">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-600/10 blur-[100px] rounded-full" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-600/10 blur-[100px] rounded-full" />
       </div>
 
-      {/* NOTIFICATIONS */}
-      <div className="fixed top-24 right-4 z-[100] flex flex-col gap-3 max-w-sm w-full pointer-events-none px-4">
-        <AnimatePresence>
-          {notifications.map((n) => (
-            <motion.div 
-              key={n.id}
-              initial={{ opacity: 0, x: 20, scale: 0.9 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 20, scale: 0.9 }}
-              className={`pointer-events-auto bg-slate-900 border p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border-l-4 ${
-                n.type === 'success' ? 'border-emerald-500/50 border-l-emerald-500' : 
-                n.type === 'alert' ? 'border-rose-500/50 border-l-rose-500' : 
-                'border-blue-500/50 border-l-blue-500'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg shrink-0 ${
-                  n.type === 'success' ? 'bg-emerald-600/10 text-emerald-500' :
-                  n.type === 'alert' ? 'bg-rose-600/10 text-rose-500' :
-                  'bg-blue-600/10 text-blue-500'
-                }`}>
-                  {n.type === 'success' ? <Check size={18} /> : n.type === 'alert' ? <AlertCircle size={18} /> : <Bell size={18} />}
-                </div>
-                <p className="text-sm font-bold text-white leading-tight">{n.text}</p>
-              </div>
-              <button 
-                onClick={() => setNotifications(prev => prev.filter(notif => notif.id !== n.id))}
-                className="text-slate-500 hover:text-white transition-colors shrink-0"
-                title="Dismiss"
-              >
-                <X size={16} />
-              </button>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-
-      {/* HEADER */}
-      <header className="sticky top-0 z-50 bg-[#0f172a]/80 backdrop-blur-xl border-b border-slate-800/100 p-6 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-600 rounded-xl">
-             <Heart className="text-white" size={20} fill="currentColor" />
+      <header className="sticky top-0 z-40 bg-[#0f172a]/80 backdrop-blur-xl border-b border-slate-800/50 px-6 py-5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/40">
+                <ShieldCheck size={24} className="text-white" />
+             </div>
+             <div>
+                <h1 className="text-xl font-black text-white italic tracking-tighter uppercase">Sober Spokane</h1>
+                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-[0.3em]">Community Support Network</p>
+             </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-black italic tracking-tighter text-white leading-none">myRecovery</h1>
-            <p className="text-[10px] text-blue-500 font-bold tracking-[0.25em] uppercase mt-1">Spokane Support</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <AnimatePresence mode="wait">
-            {currentUser ? (
-              <motion.button 
-                key="logout-btn"
-                initial={{ opacity: 0, scale: 0.9, x: 10 }}
-                animate={{ opacity: 1, scale: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.9, x: 10 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleLogout}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-colors text-sm font-bold"
-              >
-                <LogOut size={18} />
-                <span className="hidden sm:inline">Sign Out</span>
-              </motion.button>
-            ) : (
-              <motion.button 
-                key="login-btn"
-                initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                animate={{ opacity: 1, scale: 1, x: 0 }}
-                exit={{ opacity: 0, scale: 0.9, x: -10 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleLogin}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-blue-600 border border-blue-500 text-white hover:bg-blue-500 transition-colors text-sm font-bold shadow-lg shadow-blue-600/20"
-              >
-                <LogIn size={18} />
-                <span className="hidden sm:inline">Sign In</span>
-              </motion.button>
-            )}
-          </AnimatePresence>
-
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleRequestPermission}
-            className={`p-2.5 rounded-xl border transition-all ${notificationPermission === 'granted' ? 'bg-blue-600/10 border-blue-500/30 text-blue-500 shadow-lg shadow-blue-500/10' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'}`}
-            title={notificationPermission === 'granted' ? 'Notifications Enabled' : 'Enable Notifications'}
-          >
-            {notificationPermission === 'granted' ? <Bell size={22} /> : <BellOff size={22} />}
-          </motion.button>
           
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setTab('admin')}
-            className={`p-2.5 rounded-xl border transition-all ${tab === 'admin' ? 'bg-amber-500/20 border-amber-500/60 text-amber-500 ring-2 ring-amber-500/20' : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-white'}`}
-            title="Super Admin Controls"
-          >
-            <ShieldCheck size={22} className={isSuperAdmin ? 'animate-[pulse_1s_ease-in-out_infinite]' : ''} />
-            {adminNotifications > 0 && !isSuperAdmin && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-blue-600 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-[#0f172a]">
-                {adminNotifications}
-              </span>
-            )}
-          </motion.button>
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setTab('crisis')}
-            className={`p-3 rounded-2xl border-2 transition-all shadow-lg ${tab === 'crisis' ? 'bg-rose-600 border-rose-500 text-white' : 'bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20'}`}
-          >
-            <ShieldAlert size={24} />
-          </motion.button>
+          <div className="flex items-center gap-3">
+            {currentUser && userProfile && <SOSButton userProfile={userProfile} userId={currentUser.uid} />}
+            <button className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-white transition-colors relative">
+               <Bell size={20} />
+               {reminders.length > 0 && <span className="absolute top-3 right-3 w-2 h-2 bg-blue-600 rounded-full border border-[#0f172a]" />}
+            </button>
+            <button onClick={() => setTab('profile')} className="w-11 h-11 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-inner">
+               {currentUser?.photoURL ? <img src={currentUser.photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center font-bold text-slate-400">{currentUser?.email?.[0].toUpperCase() || '?'}</div>}
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="relative z-10 p-6 max-w-2xl mx-auto min-h-[calc(100vh-140px)]">
-        <AnimatePresence>
-          {currentUser && !currentUser.emailVerified && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-8 overflow-hidden"
-            >
-              <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-3xl flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
-                    <ShieldAlert size={20} />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-amber-500 uppercase tracking-widest leading-none mb-1">Account Unverified</h4>
-                    <p className="text-[10px] text-slate-400 font-medium leading-tight max-w-[200px]">Verify your email to unlock all features including mentor applications.</p>
-                  </div>
-                </div>
-                <button 
-                  disabled={verificationLoading || verificationSent}
-                  onClick={handleSendVerification}
-                  className="px-4 py-2.5 bg-amber-500 text-slate-950 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-400 transition-all disabled:opacity-50 disabled:grayscale shrink-0"
-                >
-                  {verificationSent ? 'Check Email' : verificationLoading ? 'Sending...' : 'Verify Now'}
-                </button>
+      <main className="max-w-7xl mx-auto p-6 md:p-10 pt-8">
+        {currentUser && !currentUser.emailVerified && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-6 bg-amber-600/10 border border-amber-500/20 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-600/20 rounded-2xl flex items-center justify-center text-amber-500 border border-amber-500/20">
+                <AlertCircle size={24} />
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <div className="text-left">
+                <h4 className="text-sm font-black text-white italic uppercase tracking-tight">Verify Your Email</h4>
+                <p className="text-[10px] text-amber-500/70 font-bold uppercase tracking-widest mt-0.5">Please check your inbox for the verification link.</p>
+              </div>
+            </div>
+            <button 
+              onClick={handleResendVerification}
+              disabled={verificationLoading || verificationSent}
+              className="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-amber-900/20"
+            >
+              {verificationLoading ? 'Sending...' : verificationSent ? 'Email Sent ✓' : 'Resend Verification'}
+            </button>
+          </motion.div>
+        )}
 
         <AnimatePresence mode="wait">
-          {/* VIEW: RESOURCES */}
-          {tab === 'resources' && (
-            <motion.div 
-              key="resources"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">Recovery Resources.</h2>
-              </div>
-              <p className="text-slate-400 text-sm mb-8 leading-relaxed">Spokane-specific resources for detox, sober living, and long-term recovery support.</p>
-              
-              <AdBanner className="mb-8" />
-
-              <div className="grid gap-6">
-                {(SPOKANE_RESOURCES as Resource[]).map(res => (
-                  <ResourceCard key={res.id} resource={res} />
-                ))}
-                <NativeAd />
-              </div>
-
-              <div className="p-8 bg-slate-900 border border-slate-800 rounded-3xl mt-12 text-center space-y-4">
-                 <Bus className="mx-auto text-blue-500 mb-2" size={32} />
-                 <h3 className="text-lg font-black text-white uppercase italic">Need a Ride?</h3>
-                 <p className="text-xs text-slate-500 max-w-xs mx-auto">All verified resources are accessible via Spokane Transit Authority (STA) routes. Check schedules on their website.</p>
-                 <a 
-                   href="https://www.spokanetransit.com/" 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="inline-block px-8 py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-500 transition-colors"
-                 >
-                   STA Schedules
-                 </a>
-              </div>
-            </motion.div>
-          )}
-
-          {/* VIEW: CRISIS */}
-          {tab === 'crisis' && (
-            <motion.div 
-              key="crisis"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
-            >
-              <GroundingTool />
-              <div className="grid gap-4">
-                <a 
-                  href="tel:18772661818" 
-                  className="flex items-center justify-between p-7 bg-rose-600 rounded-[2rem] text-white shadow-xl shadow-rose-950/40 relative overflow-hidden group active:scale-95 transition-transform"
-                >
-                  <div className="relative z-1">
-                    <h3 className="text-xl font-black mb-1">Spokane Regional Crisis</h3>
-                    <p className="text-rose-100 text-sm font-medium">Available 24/7 • Tap to Call</p>
-                  </div>
-                  <Phone size={32} className="relative z-1 opacity-80" />
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                    <ShieldAlert size={80} />
-                  </div>
-                </a>
-                <a 
-                  href="tel:988" 
-                  className="flex items-center justify-between p-7 bg-slate-800 rounded-[2rem] text-white border border-slate-700 shadow-lg active:scale-95 transition-transform"
-                >
-                  <div>
-                    <h3 className="text-xl font-bold mb-1">988 Suicide Lifeline</h3>
-                    <p className="text-slate-400 text-sm font-medium">National Support Network</p>
-                  </div>
-                  <Phone size={32} className="opacity-60" />
-                </a>
-              </div>
-              <button 
-                onClick={() => setTab('meetings')} 
-                className="w-full text-slate-500 text-sm font-black uppercase tracking-[0.2em] py-8 hover:text-slate-400 transition-colors"
-              >
-                Exit Crisis Dashboard
-              </button>
-            </motion.div>
-          )}
-
-          {/* VIEW: CHAT */}
-          {tab === 'ai' && (
-            <AISupportView currentUser={currentUser} />
-          )}
-
-          {tab === 'chat' && (
-            <>
-              {activeChatId && activeChat ? (
-                <ChatView 
-                  session={activeChat} 
-                  messages={messages}
-                  currentUser={currentUser}
-                  onBack={() => setActiveChatId(null)} 
-                  onSendMessage={handleSendMessage}
-                  onTyping={handleUpdateTyping}
-                />
-              ) : (
-                <ChatList 
-                  chats={chatSessions.map(c => ({
-                    ...c,
-                    sponsor: sponsors.find(s => s.id === c.sponsorId)
-                  }))}
-                  onSelectChat={(id) => setActiveChatId(id)}
-                  currentUserId={currentUser?.uid}
-                />
-              )}
-            </>
-          )}
-
-          {/* VIEW: APPLY */}
-          {tab === 'apply' && (
-            <SponsorApplicationForm 
-              onSubmit={handleApplySponsor} 
-              onCancel={() => setTab('sponsors')} 
-            />
-          )}
-
-          {/* VIEW: ADMIN */}
-          {tab === 'admin' && (
-            <AdminDashboard 
-              pendingSponsors={sponsors.filter(s => s.status === 'pending')}
-              onApprove={handleVerifySponsor}
-              onReject={handleRejectSponsor}
-              allSponsors={sponsors}
-              allUserProfiles={allUserProfiles}
-              onUpdateRole={handleUpdateUserRole}
-            />
-          )}
-
-          {/* VIEW: PROFILE */}
-          {tab === 'profile' && (
-            <motion.div 
-              key="profile"
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: -20 }}
-              className="space-y-10"
-            >
-              {!currentUser ? (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden relative"
-                >
-                  <div className="absolute top-0 left-0 w-full h-1 bg-blue-600/30" />
-                  
-                  <div className="text-center space-y-2">
-                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">
-                      {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Join the Network' : 'Reset Password'}
-                    </h2>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest leading-relaxed">
-                      {authMode === 'login' ? 'Access your recovery profile' : authMode === 'signup' ? 'Start your journey today' : 'We will send you a reset link'}
-                    </p>
-                  </div>
-
-                  {resetSent ? (
-                    <div className="text-center py-6 space-y-4">
-                      <div className="w-16 h-16 bg-emerald-600/20 rounded-full flex items-center justify-center mx-auto text-emerald-500">
-                        <Mail size={32} />
-                      </div>
-                      <p className="text-white font-bold">{authMode === 'signup' ? 'Check Your Inbox' : 'Email Sent!'}</p>
-                      <p className="text-slate-500 text-xs">
-                        {authMode === 'signup' 
-                          ? 'We\'ve sent a verification link to your email. Please verify to complete signup.'
-                          : 'Check your inbox for instructions to reset your password.'}
-                      </p>
-                      <button 
-                        onClick={() => { setAuthMode('login'); setResetSent(false); }}
-                        className="text-blue-500 text-xs font-black uppercase tracking-widest hover:underline"
-                      >
-                        Back to Login
-                      </button>
-                    </div>
-                  ) : (
-                    <form onSubmit={authMode === 'login' ? handleEmailLogin : authMode === 'signup' ? handleSignup : handleResetPassword} className="space-y-4">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
-                          <input 
-                            type="email" 
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="your@email.com"
-                            className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm text-white focus:border-blue-500 focus:outline-none transition-all shadow-inner"
-                          />
-                        </div>
-                        {authMode !== 'forgot' && (
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Password</label>
-                            <input 
-                              type="password" 
-                              required
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              placeholder="••••••••"
-                              className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm text-white focus:border-blue-500 focus:outline-none transition-all shadow-inner"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      {authError && (
-                        <p className="text-rose-500 text-[10px] font-bold uppercase text-center bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">
-                          {authError}
-                        </p>
-                      )}
-
-                      <button 
-                        type="submit"
-                        className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-[0.98]"
-                      >
-                        {authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : 'Send Link'}
-                      </button>
-
-                      <div className="flex items-center gap-4 py-2">
-                        <div className="h-px flex-1 bg-slate-800" />
-                        <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">OR</span>
-                        <div className="h-px flex-1 bg-slate-800" />
-                      </div>
-
-                      <button 
-                        type="button"
-                        onClick={handleLogin}
-                        className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all border border-slate-700/50"
-                      >
-                        <LogIn size={18} className="text-blue-500" /> Continue with Google
-                      </button>
-
-                      <div className="flex flex-col gap-3 pt-6 items-center text-center">
-                        {authMode === 'login' ? (
-                          <>
-                            <button type="button" onClick={() => setAuthMode('forgot')} className="text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-blue-400 transition-colors">
-                              Forgot Password?
-                            </button>
-                            <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest">
-                              New here? <button type="button" onClick={() => setAuthMode('signup')} className="text-blue-500 hover:underline">Create Account</button>
-                            </p>
-                          </>
-                        ) : (
-                          <button type="button" onClick={() => setAuthMode('login')} className="text-blue-500 text-[10px] font-black uppercase tracking-widest hover:underline">
-                            Back to Sign In
-                          </button>
-                        )}
-                      </div>
-                    </form>
-                  )}
-                </motion.div>
-              ) : !currentUser.emailVerified ? (
-                <motion.div 
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 space-y-8 shadow-2xl overflow-hidden text-center relative"
-                >
-                  <div className="absolute top-0 left-0 w-full h-1 bg-amber-500/30" />
-                  <div className="w-20 h-20 bg-amber-600/10 rounded-full flex items-center justify-center mx-auto text-amber-500 border border-amber-500/20">
-                    <ShieldCheck size={40} />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight leading-none">Security Hold</h2>
-                    <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest leading-relaxed">
-                      Verify your email address to unlock full features.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 space-y-4">
-                    <p className="text-white font-bold text-sm font-mono">{currentUser.email}</p>
-                    <button 
-                      onClick={handleResendVerification}
-                      className="text-blue-500 text-[10px] font-black uppercase tracking-[0.2em] hover:text-blue-400 transition-colors"
-                    >
-                      Resend Verification Link
-                    </button>
-                  </div>
-
-                  <div className="space-y-3">
-                    <button 
-                      onClick={checkVerification}
-                      className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-95"
-                    >
-                      I've Verified My Email
-                    </button>
-                    <button 
-                      onClick={handleLogout}
-                      className="w-full py-4 bg-slate-800 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:text-slate-300 transition-all"
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <>
-                  <div className="text-center space-y-2">
-                    <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">Profile Settings</h2>
-                    <p className="text-slate-400 text-sm font-medium">Customize your Spokane recovery experience.</p>
-                  </div>
-
-                  {/* SETTINGS / PROGRESS MANAGEMENT */}
-              <div className="bg-slate-800/20 rounded-[2rem] border border-slate-800 p-8 space-y-8">
-                {/* MATCH FINDER SECTION */}
-                <div className="space-y-6">
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
-                    <MapPin size={14} /> My Neighborhood
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {['Downtown', 'South Hill', 'North Side', 'Valley', 'West Plains', 'Airway Heights'].map(n => {
-                      const isActive = userProfile?.neighborhood === n;
-                      return (
-                        <button 
-                          key={n}
-                          onClick={() => handleUpdateNeighborhood(n)}
-                          className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${
-                            isActive 
-                              ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-600/20' 
-                              : 'bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {n}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
-                    <Heart size={14} /> My Recovery Needs
-                  </h3>
-                  
-                  <div className="flex flex-wrap gap-2">
-                    {RECOVERY_NEEDS.map(need => {
-                      const isActive = userNeeds.includes(need);
-                      return (
-                        <button 
-                          key={need}
-                          onClick={() => toggleNeed(need)}
-                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-                            isActive 
-                              ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20' 
-                              : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          {need}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <AnimatePresence>
-                    {topMatches.length > 0 && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="p-6 bg-blue-600/5 border border-blue-500/20 rounded-3xl space-y-4"
-                      >
-                        <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Recommended Sponsors</p>
-                        <div className="space-y-3">
-                          {topMatches.map(({ sponsor, score }) => (
-                            <button 
-                              key={sponsor.id}
-                              onClick={() => {
-                                setReachingOutTo(sponsor);
-                              }}
-                              className="w-full flex items-center justify-between p-4 bg-slate-900/80 border border-slate-800 rounded-2xl hover:border-blue-500/50 transition-all group shadow-sm"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-600/10 rounded-xl flex items-center justify-center text-blue-500 font-bold text-sm tracking-tighter">
-                                  {score > 4 ? '99' : score > 2 ? '85' : '70'}%
-                                </div>
-                                <div className="text-left">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="block font-bold text-white text-sm">{sponsor.name}</span>
-                                    {sponsor.isVerified && <BadgeCheck size={14} className="text-blue-400" />}
-                                  </div>
-                                  <span className="text-[9px] text-slate-500 font-bold uppercase">{sponsor.neighborhood} • {sponsor.years}yrs</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[9px] text-blue-400 font-black uppercase hidden sm:block">Match</span>
-                                <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-400 transition-colors" />
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 mb-4 flex items-center gap-2">
-                    <Clock size={14} /> Recovery Progress
-                  </h3>
-                  <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-inner">
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Adjust Sobriety Start Date</label>
+          {tab === 'meetings' && (
+            <motion.div key="meetings" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-10">
+              <div className="space-y-6">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1 relative group">
+                    <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-500 transition-colors" size={20} />
                     <input 
-                      type="date"
-                      value={sobrietyDate}
-                      onChange={(e) => setSobrietyDate(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl text-sm focus:outline-none focus:border-blue-500 text-center font-bold text-white shadow-sm"
+                      type="text" 
+                      placeholder="Search meetings by name or area..." 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 p-5 pl-14 rounded-3xl text-sm focus:outline-none focus:border-blue-500 transition-all text-white shadow-inner"
                     />
                   </div>
-                </div>
-
-                {/* MY REMINDERS */}
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 mb-4 flex items-center gap-2">
-                    <Bell size={14} /> My Reminders ({reminders.length})
-                  </h3>
-                  <div className="space-y-3">
-                    {reminders.length > 0 ? (
-                      reminders.map(id => {
-                        const meeting = meetings.find(m => m.id === String(id) || m.id === Number(id));
-                        if (!meeting) return null;
-                        return (
-                          <div key={id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between group">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-blue-600/10 rounded-lg">
-                                <Bell size={16} className="text-blue-500" />
-                              </div>
-                              <div className="text-left">
-                                <p className="text-sm font-bold text-white leading-none">{meeting.name}</p>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{meeting.time}</p>
-                              </div>
-                            </div>
-                            <button 
-                              onClick={() => toggleReminder(id)}
-                              className="p-2 text-slate-600 hover:text-rose-500 transition-colors"
-                              title="Remove Reminder"
-                            >
-                              <BellOff size={18} />
-                            </button>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="bg-slate-900/50 p-6 rounded-2xl border-2 border-dashed border-slate-800 text-center">
-                        <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No Active Reminders</p>
-                      </div>
-                    )}
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {['All', ...SPOKANE_NEIGHBORHOODS].map(n => (
+                      <button 
+                        key={n}
+                        onClick={() => setSelectedNeighborhood(n)}
+                        className={`px-6 py-4 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border ${selectedNeighborhood === n ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/40' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
                   </div>
                 </div>
-
-                {/* RECENT ACTIVITY */}
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 mb-4 flex items-center gap-2">
-                    <Fingerprint size={14} /> Recent Logins
-                  </h3>
-                  <div className="space-y-3">
-                    {attendance.length > 0 ? (
-                      attendance.slice(0, 5).map((record, i) => {
-                        const meeting = meetings.find(m => m.id === String(record.meetingId));
-                        return (
-                          <div key={i} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-emerald-600/10 rounded-lg">
-                                <UserCheck size={16} className="text-emerald-500" />
-                              </div>
-                              <div>
-                                <p className="font-bold text-white text-sm">{meeting?.name || 'Meeting'}</p>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase">{record.date ? new Date(record.date).toLocaleDateString() : 'Unknown Date'}</p>
-                              </div>
-                            </div>
-                            <BadgeCheck size={18} className="text-emerald-500" />
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="bg-slate-900/50 p-6 rounded-2xl border-2 border-dashed border-slate-800 text-center">
-                        <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No Activity Logged</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 text-center">
-                <button 
-                  onClick={() => setTab('crisis')}
-                  className="px-8 py-4 bg-rose-600/10 border border-rose-500/20 text-rose-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all shadow-lg"
-                >
-                  I need help right now
-                </button>
-              </div>
-            </>
-          )}
-        </motion.div>
-      )}
-
-          {/* VIEW: HUB */}
-          {tab === 'hub' && currentUser && (
-            <RecoveryHub 
-              daysSober={daysSober}
-              moodLogs={moodLogs}
-              onLogMood={handleLogMood}
-            />
-          )}
-
-          {/* VIEW: MEETINGS */}
-          {tab === 'meetings' && (
-            <motion.div 
-              key="meetings"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-8"
-            >
-              {isSuperAdmin && (
-                <div className="flex justify-between items-center bg-amber-500/5 border border-amber-500/20 p-4 rounded-3xl shadow-lg shadow-amber-950/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-500">
-                      <ShieldCheck size={20} />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest leading-none">Super Admin Mode</p>
-                      <p className="text-[9px] text-slate-500 font-bold uppercase mt-1">Directory Management Active</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={handleAddMeeting}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-400 transition-all shadow-lg shadow-amber-500/20 active:scale-95"
-                  >
-                    Add Session
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-6">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                  <input 
-                    type="text"
-                    placeholder="Search meetings in Spokane..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-800/40 border border-slate-800 p-4 pl-12 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all font-medium"
-                  />
-                </div>
-
-                <div className="flex gap-2.5 overflow-x-auto pb-2 -mx-2 px-2 no-scrollbar scroll-smooth">
-                  {SPOKANE_NEIGHBORHOODS.map(n => (
-                    <button 
-                      key={n} 
-                      onClick={() => setSelectedNeighborhood(n)}
-                      className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.1em] border transition-all whitespace-nowrap shadow-sm ${selectedNeighborhood === n ? 'bg-blue-600 border-blue-500 text-white shadow-blue-900/40' : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-600'}`}
-                    >
-                      {n}
-                    </button>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredMeetings.map(m => (
+                    <MeetingCard key={m.id} meeting={m} onSelect={setSelectedMeeting} />
                   ))}
                 </div>
-              </div>
-
-              <AdBanner />
-
-              <div className="grid gap-5">
-                <div className="flex items-center justify-between px-1">
-                  <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
-                    Nearby Support ({filteredMeetings.length})
-                  </h2>
-                </div>
-                <NativeAd />
-                {filteredMeetings.length > 0 ? (
-                  filteredMeetings.map(m => (
-                    <div key={m.id} className="relative group">
-                      <MeetingCard meeting={m} onSelect={setSelectedMeeting} />
-                      <div className="absolute top-4 right-4 flex items-center gap-2">
-                        {isSuperAdmin && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDeleteMeeting(m.id); }}
-                            className="p-2 bg-rose-600 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-700 shadow-lg shadow-rose-950/40"
-                            title="Delete Meeting"
-                          >
-                            <X size={18} />
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => handleLogAttendance(m.id)}
-                          className="p-2 bg-slate-900/50 rounded-lg text-slate-500 hover:text-emerald-500 transition-colors"
-                          title="Log Attendance"
-                        >
-                          <UserCheck size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-20 text-center bg-slate-800/20 border-2 border-dashed border-slate-800 rounded-[2.5rem]">
-                    <div className="w-16 h-16 bg-slate-800/40 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Search size={24} className="text-slate-600" />
-                    </div>
-                    <p className="text-slate-500 font-bold">No meetings found in {selectedNeighborhood}.</p>
-                    <button 
-                      onClick={() => { setSelectedNeighborhood('All'); setSearchQuery(''); }}
-                      className="mt-4 text-blue-500 font-bold hover:underline"
-                    >
-                      Reset filters
-                    </button>
+                {filteredMeetings.length === 0 && (
+                  <div className="py-20 text-center space-y-4 bg-slate-900/30 rounded-[3rem] border border-dashed border-slate-800">
+                     <Search size={48} className="mx-auto text-slate-800" />
+                     <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">No meetings found in this area.</p>
                   </div>
                 )}
               </div>
+              <AdBanner />
             </motion.div>
           )}
 
-          {/* VIEW: SPONSORS */}
+          {tab === 'hub' && (
+            <motion.div key="hub" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <RecoveryHub 
+                daysSober={daysSober} 
+                moodLogs={moodLogs} 
+                onLogMood={handleLogMood}
+                userProfile={userProfile}
+                topMatches={topMatches}
+                onSponsorClick={(s) => { setReachingOutTo(s); setTab('sponsors'); }}
+                currentUser={currentUser}
+                tab={tab}
+                handleAIMentorMatch={handleAIMentorMatch}
+              />
+            </motion.div>
+          )}
+
           {tab === 'sponsors' && (
-            <motion.div 
-              key="sponsors"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-8"
-            >
-              {isMentor && (
-                <div className="bg-gradient-to-br from-emerald-600 to-teal-800 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden group mb-6">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-                    <UserCheck size={100} />
-                  </div>
-                  <h3 className="text-xl font-black text-white italic tracking-tight">Mentor Workspace</h3>
-                  <p className="text-emerald-100/70 text-[10px] font-bold uppercase tracking-widest mt-1">Spokane Recovery Advocate</p>
-                  
-                  <div className="grid grid-cols-2 gap-4 mt-8">
-                    <div className="bg-emerald-900/40 backdrop-blur-sm p-4 rounded-2xl border border-emerald-500/20">
-                      <p className="text-[9px] text-emerald-200 font-black uppercase">Active Partners</p>
-                      <p className="text-2xl font-black text-white">{chatSessions.length}</p>
-                    </div>
-                    <div className="bg-emerald-900/40 backdrop-blur-sm p-4 rounded-2xl border border-emerald-500/20">
-                      <p className="text-[9px] text-emerald-200 font-black uppercase">Service Status</p>
-                      <p className="text-sm font-bold text-white flex items-center gap-2">
-                        <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" /> Available
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <button 
-                    onClick={() => setTab('chat')}
-                    className="w-full mt-6 py-3 bg-white text-emerald-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-lg active:scale-95"
-                  >
-                    Open Partner Inbox
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-black text-white tracking-tight leading-none uppercase italic">Support Network</h2>
-                  <p className="text-slate-500 text-sm font-bold uppercase tracking-wider">Connect with verified mentors</p>
-                </div>
-
-                <AdBanner />
-
-                <AnimatePresence>
-                  {topMatches.length > 0 && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="space-y-4"
-                    >
-                      <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] px-1 flex items-center gap-2">
-                        <Heart size={14} fill="currentColor" className="text-blue-500/50" /> Recommended for You
-                      </h3>
-                      <div className="grid gap-3">
-                        {topMatches.map(({ sponsor }) => (
-                          <button 
-                            key={`rec-${sponsor.id}`}
-                            onClick={() => setReachingOutTo(sponsor)}
-                            className="w-full flex items-center justify-between p-5 bg-blue-600/5 border border-blue-500/20 rounded-3xl hover:bg-blue-600/10 transition-all group overflow-hidden relative shadow-lg shadow-blue-950/20"
-                          >
-                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-125 transition-transform">
-                              <BadgeCheck size={80} />
-                            </div>
-                            <div className="flex items-center gap-4 relative z-1">
-                              <div className="w-12 h-12 bg-blue-600/20 rounded-2xl flex items-center justify-center text-blue-400 font-black text-lg shadow-inner">
-                                {sponsor.name.charAt(0)}
-                              </div>
-                              <div className="text-left">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-white text-base">{sponsor.name}</span>
-                                  {sponsor.isVerified && <BadgeCheck size={16} className="text-blue-400" />}
-                                </div>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
-                                  {sponsor.neighborhood} • {sponsor.years}yrs Recovery
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3 relative z-1">
-                              <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest hidden sm:block">Match</span>
-                              <div className="p-2 bg-blue-600/20 rounded-full text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                <ChevronRight size={18} />
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
+            <motion.div key="sponsors" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-12">
               <div className="space-y-4">
                 <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] px-1">All Verified Sponsors</h3>
-                <div className="grid gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {sponsors.filter(s => s.status === 'verified').map(s => (
                     <SponsorCard key={s.id} sponsor={s} onReachOut={setReachingOutTo} />
                   ))}
                   <NativeAd />
                 </div>
               </div>
-
               <div className="bg-slate-900/50 border border-slate-800/80 p-8 rounded-[2rem] text-center">
                 <Heart size={32} className="text-rose-500 mx-auto mb-4" />
                 <h3 className="font-bold text-white mb-2">Want to help?</h3>
-                <p className="text-slate-500 text-xs mb-6 max-w-xs mx-auto leading-relaxed uppercase tracking-wider font-bold">
-                  Verified sponsors must have 2+ years of continuous recovery.
-                </p>
-                <button 
-                  onClick={() => setTab('apply')}
-                  className="text-blue-500 font-black tracking-widest text-[10px] uppercase border border-blue-500/30 px-6 py-2.5 rounded-full hover:bg-blue-500 hover:text-white transition-all shadow-black/20"
-                >
-                  Apply as a Mentor
-                </button>
+                <p className="text-slate-500 text-xs mb-6 max-w-xs mx-auto leading-relaxed uppercase tracking-wider font-bold">Verified sponsors must have 2+ years of continuous recovery.</p>
+                <button onClick={() => setTab('apply')} className="text-blue-500 font-black tracking-widest text-[10px] uppercase border border-blue-500/30 px-6 py-2.5 rounded-full hover:bg-blue-500 hover:text-white transition-all shadow-black/20">Apply as a Mentor</button>
               </div>
+            </motion.div>
+          )}
+
+          {tab === 'crisis' && (
+            <motion.div key="crisis" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
+              <GroundingTool />
+              <div className="grid gap-4">
+                <a href="tel:18772661818" className="flex items-center justify-between p-7 bg-rose-600 rounded-[2rem] text-white">
+                  <div><h3 className="text-xl font-black mb-1">Spokane Regional Crisis</h3><p className="text-rose-100 text-sm">Available 24/7</p></div>
+                  <Phone size={32} />
+                </a>
+              </div>
+              <button onClick={() => setTab('meetings')} className="w-full text-slate-500 text-sm font-black uppercase tracking-[0.2em] py-8">Exit Crisis Dashboard</button>
+            </motion.div>
+          )}
+
+          {tab === 'ai' && <AISupportView currentUser={currentUser} moodLogs={moodLogs} />}
+
+          {tab === 'resources' && (
+            <motion.div
+              key="resources"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="px-6 pb-32"
+            >
+              <SpokaneResources />
+            </motion.div>
+          )}
+
+          {tab === 'chat' && (
+            <>
+              {activeChatId && activeChat ? (
+                <ChatView session={activeChat} messages={messages} currentUser={currentUser} onBack={() => setActiveChatId(null)} onSendMessage={handleSendMessage} onTyping={handleUpdateTyping} />
+              ) : (
+                <ChatList chats={chatSessions.map(c => ({ ...c, sponsor: sponsors.find(s => s.id === c.sponsorId) }))} onSelectChat={(id) => setActiveChatId(id)} currentUserId={currentUser?.uid} />
+              )}
+            </>
+          )}
+
+          {tab === 'apply' && <SponsorApplicationForm onSubmit={handleApplySponsor} onCancel={() => setTab('sponsors')} />}
+
+          {tab === 'admin' && <AdminDashboard pendingSponsors={sponsors.filter(s => s.status === 'pending')} onApprove={handleVerifySponsor} onReject={handleRejectSponsor} allSponsors={sponsors} allUserProfiles={allUserProfiles} onUpdateRole={handleUpdateUserRole} />}
+
+          {tab === 'profile' && (
+            <motion.div key="profile" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -20 }} className="space-y-10">
+              {!currentUser ? (
+                <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 space-y-8">
+                  {resetSent ? (
+                    <div className="text-center space-y-6 py-4">
+                      <div className="w-16 h-16 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
+                        <Mail className="text-blue-500" size={32} />
+                      </div>
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-black text-white italic uppercase tracking-tight">Check Your Inbox</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
+                          We've sent a link to {email}.<br />Please check your email to continue.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => { setResetSent(false); setAuthMode('login'); }}
+                        className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase tracking-widest text-[10px]"
+                      >
+                        Back to Login
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-center space-y-2">
+                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">{authMode === 'login' ? 'Welcome Back' : 'Join the Network'}</h2>
+                      </div>
+                      {authError && (
+                        <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] font-bold uppercase text-center">
+                          {authError}
+                        </div>
+                      )}
+                      <form onSubmit={authMode === 'login' ? handleEmailLogin : handleSignup} className="space-y-4">
+                        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
+                        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
+                        {authMode === 'login' && (
+                          <button type="button" onClick={handleResetPassword} className="text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-blue-400 block ml-auto px-1">Forgot Password?</button>
+                        )}
+                        <button type="submit" className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 active:scale-95">{authMode === 'login' ? 'Sign In' : 'Sign Up'}</button>
+                        <div className="relative">
+                          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
+                          <div className="relative flex justify-center text-[8px] uppercase font-black text-slate-700"><span className="bg-slate-900 px-4">OR</span></div>
+                        </div>
+                        <button type="button" onClick={handleLogin} className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                          <LogIn size={18} /> Continue with Google
+                        </button>
+                        <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
+                          {authMode === 'login' ? 'New to Spokane Recovery? Sign Up' : 'Already have an account? Sign In'}
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-800/20 rounded-[2rem] border border-slate-800 p-8 space-y-8">
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">Community Identity</h3>
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Display Alias</label>
+                        <input 
+                          type="text" 
+                          value={userProfile?.alias || ''}
+                          onChange={(e) => handleUpdateProfile({ alias: e.target.value })}
+                          placeholder={userProfile?.name?.split(' ')[0]}
+                          className="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl text-sm text-white focus:border-blue-500 outline-none"
+                        />
+                      </div>
+                      {userProfile?.role === 'mentor' && (
+                        <div className="flex items-center justify-between p-4 bg-rose-500/5 border border-rose-500/10 rounded-2xl">
+                          <div>
+                            <p className="text-xs font-bold text-white uppercase tracking-tighter">Emergency Response</p>
+                            <p className="text-[9px] text-slate-500 italic">Available for SOS alerts</p>
+                          </div>
+                          <input 
+                            type="checkbox"
+                            checked={userProfile?.isCrisisAvailable || false}
+                            onChange={(e) => handleUpdateProfile({ isCrisisAvailable: e.target.checked })}
+                            className="w-5 h-5 rounded border-slate-700 bg-slate-800 text-rose-600 focus:ring-rose-500"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><MapPin size={14} /> My Neighborhood</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {['Downtown', 'South Hill', 'North Side', 'Valley', 'West Plains', 'Airway Heights'].map(n => (
+                        <button key={n} onClick={() => handleUpdateNeighborhood(n)} className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${userProfile?.neighborhood === n ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-500'}`}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 mb-4 flex items-center gap-2"><Clock size={14} /> Recovery Progress</h3>
+                    <input type="date" value={sobrietyDate} onChange={(e) => handleUpdateSobrietyDate(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl text-center font-bold text-white shadow-sm" />
+                  </div>
+
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Bell size={14} /> Notifications</h3>
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-white">Push Notifications</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-black">Alerts for messages & meetings</p>
+                      </div>
+                      <button 
+                        onClick={handleRequestPermission}
+                        className={`w-14 h-8 rounded-full p-1 transition-all flex ${userProfile?.notificationsEnabled && notificationPermission === 'granted' ? 'bg-emerald-600 justify-end' : 'bg-slate-800 justify-start'}`}
+                      >
+                        <motion.div layout className="w-6 h-6 bg-white rounded-full shadow-sm" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Calendar size={14} /> My Meeting History ({attendance.length})</h3>
+                    <div className="bg-slate-900 border border-slate-800 rounded-[2rem] overflow-hidden divide-y divide-slate-800">
+                      {attendance.slice(0, 5).map(record => (
+                        <div key={record.id} className="p-5 flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-bold text-white">{record.meetingName}</h4>
+                            <p className="text-[10px] text-slate-500">{new Date(record.date).toLocaleDateString()}</p>
+                          </div>
+                          <div className="px-3 py-1 bg-blue-600/10 rounded-full border border-blue-500/20 text-[9px] font-black text-blue-400 uppercase tracking-tighter">+1 Win</div>
+                        </div>
+                      ))}
+                      {attendance.length === 0 && <div className="p-10 text-center text-slate-500 text-xs font-bold uppercase">No meetings logged.</div>}
+                    </div>
+                  </div>
+
+                  <div className="pt-8 border-t border-slate-800">
+                    <button onClick={handleLogout} className="w-full py-5 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-2xl font-black uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all shadow-xl shadow-rose-950/20">Sign Out</button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      {/* BOTTOM NAVIGATION */}
       <nav className="fixed bottom-0 left-0 right-0 py-4 px-6 bg-[#0f172a]/95 backdrop-blur-2xl border-t border-slate-800/80 flex justify-around items-center z-50 shadow-2xl safe-area-bottom">
-        <button 
-          onClick={() => setTab('meetings')} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'meetings' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <MapPin size={22} className={tab === 'meetings' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Maps</span>
-          {tab === 'meetings' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
-        <button 
-          onClick={() => setTab('sponsors')} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'sponsors' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <UserCheck size={22} className={tab === 'sponsors' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Partners</span>
-          {tab === 'sponsors' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
-        <button 
-          onClick={() => setTab('hub')} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'hub' ? 'text-emerald-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Trophy size={22} className={tab === 'hub' ? 'drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter text-emerald-500">My Hub</span>
-          {tab === 'hub' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-emerald-500 rounded-full" />}
-        </button>
-        <button 
-          onClick={() => setTab('ai')} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'ai' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Sparkles size={22} className={tab === 'ai' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Guide</span>
-          {tab === 'ai' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
-        <button 
-          onClick={() => { setTab('chat'); setActiveChatId(null); }} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'chat' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <div className="relative">
-            <Mail size={22} className={tab === 'chat' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 rounded-full border-2 border-[#0f172a]" />
-            )}
-          </div>
-          <span className="text-[10px] font-black uppercase tracking-tighter">Inbox</span>
-          {tab === 'chat' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
-        {isSuperAdmin && (
-          <button 
-            onClick={() => setTab('admin')} 
-            className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'admin' ? 'text-amber-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <ShieldCheck size={22} className={tab === 'admin' ? 'drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]' : ''} />
-            <span className="text-[10px] font-black uppercase tracking-tighter">Admin</span>
-            {tab === 'admin' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-amber-500 rounded-full" />}
+        {[
+          { id: 'meetings', icon: MapPin, label: 'Maps' },
+          { id: 'hub', icon: Trophy, label: 'Hub' },
+          { id: 'sponsors', icon: UserCheck, label: 'Partners' },
+          { id: 'resources', icon: Heart, label: 'Bento' },
+          { id: 'ai', icon: Sparkles, label: 'Guide' },
+          { id: 'chat', icon: Mail, label: 'Inbox', badge: unreadCount },
+          { id: 'profile', icon: Settings2, label: 'More' }
+        ].map((n: any) => (
+          <button key={n.id} onClick={() => setTab(n.id as any)} className={`flex flex-col items-center gap-1 transition-all relative ${tab === n.id ? (n.color || 'text-blue-500') + ' scale-110' : 'text-slate-500'}`}>
+            <n.icon size={22} />
+            <span className="text-[10px] font-black uppercase tracking-tighter">{n.label}</span>
+            {n.badge > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-blue-600 rounded-full border-2 border-[#0f172a]" />}
+            {tab === n.id && <motion.div layoutId="nav-dot" className={`absolute -bottom-2 w-1 h-1 rounded-full ${n.color?.replace('text', 'bg') || 'bg-blue-500'}`} />}
           </button>
-        )}
-        <button 
-          onClick={() => setTab('profile')} 
-          className={`flex flex-col items-center gap-1 transition-all relative ${tab === 'profile' ? 'text-blue-500 scale-110' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <Settings2 size={22} className={tab === 'profile' ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : ''} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">More</span>
-          {tab === 'profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-2 w-1 h-1 bg-blue-500 rounded-full" />}
-        </button>
+        ))}
+        {isSuperAdmin && <button onClick={() => setTab('admin')} className={`flex flex-col items-center gap-1 transition-all ${tab === 'admin' ? 'text-amber-500 scale-110' : 'text-slate-500'}`}><ShieldCheck size={22} /><span className="text-[10px] font-black uppercase tracking-tighter">Admin</span></button>}
       </nav>
-      
-      {/* QUICK ACTIONS */}
+
       <div className="fixed bottom-24 right-6 z-40 flex flex-col gap-3">
-        <motion.button 
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={() => setIsGroundingActive(true)}
-          className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-blue-900/40 border border-blue-500/30"
-          title="Breathe / Grounding"
-        >
-          <Wind size={28} />
-        </motion.button>
+        <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => setIsGroundingActive(true)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-xl shadow-blue-900/40 border border-blue-500/30"><Wind size={28} /></motion.button>
       </div>
 
-      {/* MODALS & OVERLAYS */}
       <AnimatePresence>
-        {showOnboarding && currentUser && userProfile && (
-          <ProfileOnboarding 
-            user={currentUser} 
-            profile={userProfile} 
-            onComplete={() => {
-              setShowOnboarding(false);
-              showToast("Profile configured successfully!", "success");
-            }} 
-          />
-        )}
         {isGroundingActive && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-6"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
             <div className="w-full max-w-sm relative">
-              <button 
-                onClick={() => setIsGroundingActive(false)}
-                className="absolute -top-12 right-0 p-2 text-slate-400 hover:text-white transition-colors"
-              >
-                <X size={24} />
-              </button>
+              <button onClick={() => setIsGroundingActive(false)} className="absolute -top-12 right-0 p-2 text-slate-400 hover:text-white"><X size={24} /></button>
               <GroundingTool />
             </div>
           </motion.div>
@@ -2895,18 +2339,18 @@ export default function App() {
           <MeetingDetailModal 
             meeting={selectedMeeting} 
             onClose={() => setSelectedMeeting(null)} 
-            sponsors={sponsors}
-            onConnect={setReachingOutTo}
-            reminders={reminders}
-            onToggleReminder={toggleReminder}
+            sponsors={sponsors} 
+            onConnect={setReachingOutTo} 
+            reminders={reminders} 
+            onToggleReminder={toggleReminder} 
+            onLogAttendance={handleLogAttendance} 
+            attendance={attendance} 
+            userProfile={userProfile}
+            userId={currentUser?.uid || ''}
           />
         )}
         {reachingOutTo && (
-          <WarmHandshakeModal 
-            sponsor={reachingOutTo} 
-            onClose={() => setReachingOutTo(null)} 
-            onStartChat={(text) => handleStartChat(reachingOutTo, text)}
-          />
+          <WarmHandshakeModal sponsor={reachingOutTo} onClose={() => setReachingOutTo(null)} onStartChat={(text) => handleStartChat(reachingOutTo, text)} />
         )}
       </AnimatePresence>
       <Analytics />
@@ -2914,4 +2358,3 @@ export default function App() {
     </APIProvider>
   );
 }
-

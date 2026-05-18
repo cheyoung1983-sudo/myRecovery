@@ -34,17 +34,72 @@ service cloud.firestore {
     
     function isValidUser(data) {
       return data.keys().hasAll(['email', 'name', 'role']) &&
-             data.keys().size() <= 8 &&
+             data.keys().size() <= 15 &&
              data.email is string && data.email.size() <= 256 &&
              data.name is string && data.name.size() <= 128 &&
              data.role in ['user', 'mentor', 'admin'] &&
              (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
              (!('sobrietyDate' in data) || (data.sobrietyDate is string && data.sobrietyDate.size() <= 50)) &&
              (!('neighborhood' in data) || (data.neighborhood is string && data.neighborhood.size() <= 100)) &&
-             (!('recoveryNeeds' in data) || (data.recoveryNeeds is list && data.recoveryNeeds.size() <= 20));
+             (!('recoveryNeeds' in data) || (data.recoveryNeeds is list && data.recoveryNeeds.size() <= 20)) &&
+             (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 512)) &&
+             (!('notificationsEnabled' in data) || (data.notificationsEnabled is bool)) &&
+             (!('alias' in data) || (data.alias is string && data.alias.size() <= 100)) &&
+             (!('isCrisisAvailable' in data) || (data.isCrisisAvailable is bool)) &&
+             (!('emergencyMentorId' in data) || (data.emergencyMentorId is string && data.emergencyMentorId.size() <= 100)) &&
+             (!('points' in data) || (data.points is number)) &&
+             (!('badges' in data) || (data.badges is list && data.badges.size() <= 50));
     }
 
-    function isValidMeeting(data) {
+    function isValidSpokaneResource(data) {
+      return data.keys().hasAll(['name', 'category', 'description']) &&
+             data.name is string && data.name.size() <= 200 &&
+             data.category in ['health', 'food', 'shelter', 'crisis', 'legal'] &&
+             data.description is string && data.description.size() <= 2000 &&
+             (!('address' in data) || (data.address is string)) &&
+             (!('phone' in data) || (data.phone is string)) &&
+             (!('website' in data) || (data.website is string)) &&
+             (!('tags' in data) || (data.tags is list && data.tags.size() <= 10));
+    }
+
+    function isValidMeetingBuddy(data) {
+      return data.keys().hasAll(['meetingId', 'userId', 'userName', 'arrivalTime', 'status']) &&
+             data.meetingId is string && data.userId == request.auth.uid &&
+             data.userName is string &&
+             data.arrivalTime == request.time &&
+             data.status in ['waiting', 'matched', 'completed'] &&
+             (!('userAlias' in data) || (data.userAlias is string));
+    }
+
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['neighborhood', 'content', 'createdAt', 'type', 'authorId']) &&
+             data.neighborhood is string &&
+             data.content is string && data.content.size() <= 5000 &&
+             data.createdAt == request.time &&
+             data.type in ['event', 'update', 'alert'] &&
+             data.authorId == request.auth.uid;
+    }
+
+    function isValidAIReflection(data) {
+      return data.keys().hasAll(['userId', 'reflection', 'generatedAt']) &&
+             data.userId is string &&
+             data.reflection is string &&
+             data.generatedAt == request.time &&
+             (!('moodDataSummary' in data) || (data.moodDataSummary is string));
+    }
+
+    function isValidNeighborhoodPost(data) {
+      return data.keys().hasAll(['neighborhood', 'userId', 'userName', 'content', 'createdAt']) &&
+             data.neighborhood is string &&
+             data.userId == request.auth.uid &&
+             data.userName is string &&
+             data.content is string && data.content.size() <= 2000 &&
+             data.createdAt == request.time &&
+             (!('supportCount' in data) || (data.supportCount is number)) &&
+             (!('isNewcomer' in data) || (data.isNewcomer is bool));
+    }
+
+     function isValidMeeting(data) {
       return data.keys().hasAll(['name', 'neighborhood', 'address', 'time', 'day', 'fellowship', 'lat', 'lng']) &&
              data.name is string && data.name.size() <= 200 &&
              data.neighborhood is string && data.neighborhood.size() <= 100 &&
@@ -52,7 +107,11 @@ service cloud.firestore {
              data.time is string && data.time.size() <= 50 &&
              data.day is string && data.day.size() <= 20 &&
              data.fellowship in ['AA', 'NA'] &&
-             data.lat is number && data.lng is number;
+             data.lat is number && data.lng is number &&
+             (!('format' in data) || (data.format is string && data.format.size() <= 100)) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             (!('isOpen' in data) || (data.isOpen is bool)) &&
+             (!('sponsors' in data) || (data.sponsors is list && data.sponsors.size() <= 50));
     }
 
     function isValidSponsor(data) {
@@ -62,6 +121,8 @@ service cloud.firestore {
              data.years is number && data.years >= 0 &&
              data.status in ['pending', 'verified', 'rejected'] &&
              data.isVerified is bool &&
+             (!('verifiedAt' in data) || (data.verifiedAt is timestamp)) &&
+             (!('verifiedBy' in data) || (data.verifiedBy is string)) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() <= 5000)) &&
              (!('neighborhood' in data) || (data.neighborhood is string && data.neighborhood.size() <= 100)) &&
              (!('specialties' in data) || (data.specialties is list && data.specialties.size() <= 15));
@@ -75,9 +136,11 @@ service cloud.firestore {
 
     function isValidMessage(data) {
       return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.keys().size() <= 4 &&
              data.senderId == request.auth.uid &&
              data.text is string && data.text.size() <= 10000 &&
-             data.timestamp == request.time;
+             data.timestamp == request.time &&
+             (!('isCrisis' in data) || (data.isCrisis is bool));
     }
 
     function isValidAttendance(data) {
@@ -121,19 +184,25 @@ service cloud.firestore {
           // Protect the super admin from being demoted by others
           (existing().email != 'cheyoung1983@gmail.com' || request.auth.token.email == 'cheyoung1983@gmail.com') &&
           incoming().email == existing().email &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood', 'fcmToken', 'notificationsEnabled', 'alias', 'isCrisisAvailable', 'emergencyMentorId', 'points', 'badges'])
         )) ||
-        // Owner Case: Regular updates (cannot change role or email)
+        // Owner Case: Regular updates (cannot change role or email or points directly)
         (isOwner(userId) && 
           incoming().role == existing().role &&
           incoming().email == existing().email &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood'])
+          (!('points' in incoming()) || (incoming().points == existing().points)) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'sobrietyDate', 'recoveryNeeds', 'neighborhood', 'fcmToken', 'notificationsEnabled', 'alias', 'isCrisisAvailable', 'emergencyMentorId', 'points', 'badges'])
         )
       );
 
       match /attendance/{attendanceId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidAttendance(incoming());
+      }
+
+      match /aiReflections/{reflId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isAdmin(); // Only generated via server/admin
       }
 
       match /moodLogs/{logId} {
@@ -194,6 +263,37 @@ service cloud.firestore {
         allow read: if isSignedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.mentorUserId == request.auth.uid || isAdmin());
         allow create: if isSignedIn() && (get(/databases/$(database)/documents/chats/$(chatId)).data.userId == request.auth.uid || get(/databases/$(database)/documents/chats/$(chatId)).data.mentorUserId == request.auth.uid || isAdmin()) && isValidMessage(incoming());
       }
+    }
+
+    match /meetingBuddies/{buddyId} {
+      allow read: if true;
+      allow create: if isVerifiedUser() && isValidMeetingBuddy(incoming());
+      allow update: if isOwner(existing().userId) || isAdmin();
+      allow delete: if isOwner(existing().userId) || isAdmin();
+    }
+
+    match /neighborhoodAnnouncements/{annId} {
+      allow read: if true;
+      allow create: if isAdmin(); // Only admins can create official announcements
+      allow delete: if isAdmin();
+    }
+
+    match /neighborhoodPosts/{postId} {
+      allow read: if true;
+      allow create: if isVerifiedUser() && isValidNeighborhoodPost(incoming());
+      allow update: if (isOwner(existing().userId) || isAdmin()) && isValidNeighborhoodPost(incoming()) ||
+                    (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['supportCount']));
+      allow delete: if isOwner(existing().userId) || isAdmin();
+
+      match /supports/{supportId} {
+        allow read: if true;
+        allow create: if isVerifiedUser() && supportId == request.auth.uid;
+      }
+    }
+
+    match /spokaneResources/{resourceId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

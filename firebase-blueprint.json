@@ -14,9 +14,91 @@
           "type": "array",
           "items": { "type": "string" }
         },
-        "role": { "type": "string", "enum": ["user", "mentor", "admin"] }
+        "role": { "type": "string", "enum": ["user", "mentor", "admin"] },
+        "fcmToken": { "type": "string" },
+        "notificationsEnabled": { "type": "boolean" },
+        "alias": { "type": "string" },
+        "isCrisisAvailable": { "type": "boolean" },
+        "emergencyMentorId": { "type": "string" },
+        "points": { "type": "number", "default": 0 },
+        "badges": { 
+          "type": "array", 
+          "items": { "type": "string" } 
+        }
       },
       "required": ["email", "name", "role"]
+    },
+    "SpokaneResource": {
+      "title": "Spokane Community Resource",
+      "description": "Local help organizations and services",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["health", "food", "shelter", "crisis", "legal"] },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "website": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": { 
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["name", "category", "description"]
+    },
+    "MeetingBuddy": {
+      "title": "Meeting Buddy queue entry",
+      "description": "User waiting at a meeting door for a buddy",
+      "type": "object",
+      "properties": {
+        "meetingId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAlias": { "type": "string" },
+        "arrivalTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["waiting", "matched", "completed"] }
+      },
+      "required": ["meetingId", "userId", "userName", "arrivalTime", "status"]
+    },
+    "NeighborhoodAnnouncement": {
+      "title": "Neighborhood-specific announcement",
+      "description": "Read-only channel announcements for local sober events",
+      "type": "object",
+      "properties": {
+        "neighborhood": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["event", "update", "alert"] },
+        "authorId": { "type": "string" }
+      },
+      "required": ["neighborhood", "content", "createdAt", "type", "authorId"]
+    },
+    "NeighborhoodPost": {
+      "title": "Community Post",
+      "description": "User post in the neighborhood feed for support or questions",
+      "type": "object",
+      "properties": {
+        "neighborhood": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "supportCount": { "type": "number", "default": 0 },
+        "isNewcomer": { "type": "boolean" }
+      },
+      "required": ["neighborhood", "userId", "userName", "content", "createdAt"]
+    },
+    "AIReflection": {
+      "title": "AI-generated recovery reflection",
+      "description": "Personalized reflection based on mood history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "reflection": { "type": "string" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "moodDataSummary": { "type": "string" }
+      },
+      "required": ["userId", "reflection", "generatedAt"]
     },
     "Meeting": {
       "title": "Recovery Meeting",
@@ -31,6 +113,7 @@
         "fellowship": { "type": "string", "enum": ["AA", "NA"] },
         "lat": { "type": "number" },
         "lng": { "type": "number" },
+        "format": { "type": "string" },
         "sponsors": { 
           "type": "array",
           "items": { "type": "string" }
@@ -53,6 +136,8 @@
         },
         "status": { "type": "string", "enum": ["pending", "verified", "rejected"] },
         "isVerified": { "type": "boolean" },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "verifiedBy": { "type": "string" },
         "neighborhood": { "type": "string" }
       },
       "required": ["userId", "name", "years", "status", "isVerified"]
@@ -165,6 +250,30 @@
     "/chats/{chatId}/messages/{messageId}": {
       "schema": "Message",
       "description": "Message history for a chat"
+    },
+    "/meetingBuddies/{buddyId}": {
+      "schema": "MeetingBuddy",
+      "description": "Users seeking buddies at meeting locations"
+    },
+    "/neighborhoodAnnouncements/{annId}": {
+      "schema": "NeighborhoodAnnouncement",
+      "description": "Local community updates"
+    },
+    "/neighborhoodPosts/{postId}": {
+      "schema": "NeighborhoodPost",
+      "description": "User-generated community posts"
+    },
+    "/neighborhoodPosts/{postId}/supports/{supportId}": {
+      "schema": "User",
+      "description": "Track who supported a post to award points"
+    },
+    "/users/{userId}/aiReflections/{reflId}": {
+      "schema": "AIReflection",
+      "description": "AI-generated wellness reflections"
+    },
+    "/spokaneResources/{resourceId}": {
+      "schema": "SpokaneResource",
+      "description": "Directory of local Spokane resources"
     }
   }
 }

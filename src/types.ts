@@ -25,10 +25,14 @@ export interface Sponsor {
   neighborhood?: string;
   isVerified: boolean;
   status: 'pending' | 'verified' | 'rejected';
+  verifiedAt?: any;
+  verifiedBy?: string;
 }
 
 export interface AttendanceRecord {
+  id?: string;
   meetingId: string;
+  meetingName: string;
   date: string;
 }
 
@@ -88,6 +92,74 @@ export interface UserProfile {
   recoveryNeeds: string[];
   neighborhood?: string;
   role: 'user' | 'mentor' | 'admin';
+  fcmToken?: string;
+  notificationsEnabled?: boolean;
+  alias?: string;
+  isCrisisAvailable?: boolean;
+  emergencyMentorId?: string;
+  points?: number;
+  badges?: string[];
+}
+
+export interface SpokaneResource {
+  id: string;
+  name: string;
+  category: 'health' | 'food' | 'shelter' | 'crisis' | 'legal';
+  address?: string;
+  phone?: string;
+  website?: string;
+  description: string;
+  tags?: string[];
+}
+
+export interface MeetingBuddy {
+  id: string;
+  meetingId: string;
+  userId: string;
+  userName: string;
+  userAlias?: string;
+  arrivalTime: any;
+  status: 'waiting' | 'matched' | 'completed';
+}
+
+export interface NeighborhoodAnnouncement {
+  id: string;
+  neighborhood: string;
+  content: string;
+  createdAt: any;
+  type: 'event' | 'update' | 'alert';
+  authorId: string;
+}
+
+export interface NeighborhoodPost {
+  id: string;
+  neighborhood: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: any;
+  supportCount: number;
+  isNewcomer?: boolean;
+}
+
+export interface AIReflection {
+  id: string;
+  userId: string;
+  reflection: string;
+  generatedAt: any;
+  moodDataSummary?: string;
+}
+
+export interface TransitArrival {
+  id: string;
+  tripId: string;
+  routeId: string;
+  stopTimeUpdates: {
+    stopId: string;
+    arrival?: number;
+    departure?: number;
+    delay?: number;
+  }[];
 }
 
 export interface MoodEntry {

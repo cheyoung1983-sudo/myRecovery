@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
+import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const config = {
@@ -17,6 +18,30 @@ const app = initializeApp(config);
 export const db = getFirestore(app, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+export { onMessage };
+export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+
+export const requestForToken = async () => {
+  if (!messaging) return null;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      const currentToken = await getToken(messaging, { 
+        vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY 
+      });
+      if (currentToken) {
+        return currentToken;
+      } else {
+        console.warn('No registration token available. Request permission to generate one.');
+        return null;
+      }
+    }
+  } catch (err) {
+    console.error('An error occurred while retrieving token. ', err);
+    return null;
+  }
+};
 
 export enum OperationType {
   CREATE = 'create',

@@ -76,7 +76,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                  {SPOKANE_NEIGHBORHOODS.filter(n => n !== 'All').map(n => (
+                  {SPOKANE_NEIGHBORHOODS.map(n => (
                     <button
                       key={n}
                       onClick={() => setSelectedNeighborhood(n)}
@@ -93,7 +93,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
 
                 <div className="bg-slate-900/50 p-4 rounded-2xl border border-dashed border-slate-800 flex items-center gap-3">
                   <Wind size={18} className="text-blue-400 shrink-0" />
-                  <p className="text-[10px] text-slate-500 font-bold uppercase leading-tight">We use this to surface nearby STA bus routes and walking-distance meetings.</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase leading-tight">Setting your home base helps us recommend nearby meetings and mentors in your area.</p>
                 </div>
                 
                 <button
@@ -119,7 +119,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
                     <Heart className="text-emerald-500" size={32} />
                   </div>
                   <h2 className="text-3xl font-black text-white italic tracking-tight uppercase">Support Profile</h2>
-                  <p className="text-slate-400 text-sm font-medium">What areas are you focusing on in your recovery today?</p>
+                  <p className="text-slate-400 text-sm font-medium">What areas are you focusing on in your recovery? We'll prioritize resources and mentors that match your goals.</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
