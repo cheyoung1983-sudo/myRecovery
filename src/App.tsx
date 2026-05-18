@@ -11,7 +11,7 @@ import {
   UserCheck, Clock, ShieldCheck, Info, Accessibility,
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
   LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
-  Smile, Frown, Meh, AlertCircle, Check
+  Smile, Frown, Meh, AlertCircle, Check, BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -49,6 +49,19 @@ import { AIReflectionCard } from './components/AIReflectionCard';
 import { SOSButton } from './components/SOSButton';
 import { TransitArrivals } from './components/TransitArrivals';
 import { SpokaneResources } from './components/SpokaneResources';
+import { LiteratureSearch } from './components/LiteratureSearch';
+import { RecoveryHub } from './components/RecoveryHub';
+import { GroundingTool } from './components/GroundingTool';
+import { MeetingCard } from './components/MeetingCard';
+import { SponsorCard } from './components/SponsorCard';
+import { ResourceCard } from './components/ResourceCard';
+import { AISupportView } from './components/AISupportView';
+import { ChipCase } from './components/ChipCase';
+import { MoodLogger } from './components/MoodLogger';
+import { MeetingDetailModal } from './components/MeetingDetailModal';
+import { WarmHandshakeModal } from './components/WarmHandshakeModal';
+import { MeetingMap } from './components/MeetingMap';
+import { ChatView } from './components/ChatView';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -758,595 +771,41 @@ const MoodLogger = ({ onLog }: { onLog: (mood: MoodEntry['mood'], note: string) 
   );
 };
 
-const RecoveryHub = ({ 
-  daysSober, 
-  moodLogs, 
-  onLogMood,
-  userProfile,
-  topMatches,
-  onSponsorClick,
-  currentUser,
-  tab,
-  handleAIMentorMatch
-}: { 
-  daysSober: number, 
-  moodLogs: MoodEntry[], 
-  onLogMood: (mood: MoodEntry['mood'], note: string) => void,
-  userProfile: UserProfile | null,
-  topMatches: { sponsor: Sponsor, score: number }[],
-  onSponsorClick: (sponsor: Sponsor) => void,
-  currentUser: FirebaseUser | null,
-  tab: string,
-  handleAIMentorMatch: () => void
-}) => {
-  const milestones = [
-    { label: '24 Hours', days: 1, icon: '🌟' },
-    { label: '1 Week', days: 7, icon: '🔥' },
-    { label: '1 Month', days: 30, icon: '💎' },
-    { label: '3 Months', days: 90, icon: '🏆' },
-    { label: '6 Months', days: 180, icon: '🛡️' },
-    { label: '1 Year', days: 365, icon: '👑' },
-  ];
 
-  const nextMilestone = milestones.find(m => daysSober < m.days) || milestones[milestones.length - 1];
-  const prevMilestoneDays = milestones.filter(m => daysSober >= m.days).pop()?.days || 0;
-  const progressToNext = ((daysSober - prevMilestoneDays) / (nextMilestone.days - prevMilestoneDays)) * 100;
 
-  // Calculate check-in streak (consecutive days of mood logs)
-  const streak = useMemo(() => {
-    if (moodLogs.length === 0) return 0;
-    const dates = new Set(moodLogs.map(log => {
-      const date = log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp 
-        ? (log.timestamp as any).toDate() 
-        : new Date();
-      return date.toISOString().split('T')[0];
-    }));
-    
-    let currentStreak = 0;
-    let checkDate = new Date();
-    
-    // If they haven't logged today, check from yesterday
-    if (!dates.has(checkDate.toISOString().split('T')[0])) {
-      checkDate.setDate(checkDate.getDate() - 1);
-    }
 
-    while (dates.has(checkDate.toISOString().split('T')[0])) {
-      currentStreak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    }
-    return currentStreak;
-  }, [moodLogs]);
 
-  const points = userProfile?.points || 0;
-  const rank = points >= 1000 ? 'Mentor' : points >= 500 ? 'Guide' : points >= 100 ? 'Contributor' : 'Newcomer';
-  const rankColor = points >= 1000 ? 'text-amber-400' : points >= 500 ? 'text-blue-400' : points >= 100 ? 'text-emerald-400' : 'text-slate-400';
 
-  return (
-    <div className="space-y-8 pb-10">
-      {/* PERSONALIZED WELCOME */}
-      {userProfile && (
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col md:flex-row items-center gap-6 bg-slate-900/50 p-6 rounded-[2.5rem] border border-slate-800"
-        >
-          <div className="w-20 h-20 bg-blue-600/10 rounded-3xl flex items-center justify-center text-blue-500 border border-blue-500/20 shadow-inner relative">
-            <Sparkles size={40} />
-            <div className={`absolute -bottom-2 -right-2 px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[8px] font-black uppercase tracking-widest ${rankColor} shadow-xl`}>
-              {rank}
-            </div>
-          </div>
-          <div className="text-center md:text-left space-y-1">
-            <h1 className="text-3xl font-black text-white italic uppercase tracking-tight">
-              Hey, {userProfile.name.split(' ')[0]}
-            </h1>
-            <p className="text-slate-400 text-sm font-medium">
-              Checking in from <span className="text-blue-400 font-bold">{userProfile.neighborhood}</span> today? 
-              {userProfile.recoveryNeeds.length > 0 && (
-                <> Focus: <span className="text-emerald-400 font-bold">{userProfile.recoveryNeeds[0]}</span></>
-              )}
-            </p>
-          </div>
-        </motion.div>
-      )}
 
-      {/* MAIN SOBRIETY DASHBOARD */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* BIG CLOCK */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-blue-600 to-blue-800 p-8 rounded-[3rem] text-center shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:rotate-12 transition-transform">
-            <Trophy size={160} />
-          </div>
+
+
+
+
+
+
+
+
+
           
-          <div className="relative z-10">
-            <p className="text-blue-200 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Recovery Journey</p>
-            <div className="flex items-baseline justify-center gap-3">
-              <span className="text-8xl font-black text-white tracking-tighter drop-shadow-xl">{daysSober}</span>
-              <span className="text-3xl font-black text-blue-200 uppercase tracking-tighter italic">Days</span>
-            </div>
 
-            {/* NEXT MILESTONE PROGRESS */}
-            <div className="mt-8 space-y-3">
-              <div className="flex justify-between items-end mb-1">
-                <span className="text-[10px] font-black text-blue-200 uppercase">Next Milestone: {nextMilestone.label}</span>
-                <span className="text-[10px] font-black text-white">{Math.floor(progressToNext)}%</span>
-              </div>
-              <div className="h-4 bg-blue-900/40 rounded-full overflow-hidden p-1 border border-blue-400/20">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progressToNext}%` }}
-                  transition={{ duration: 1.5, ease: "easeOut" }}
-                  className="h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full shadow-[0_0_15px_rgba(52,211,153,0.5)]"
-                />
-              </div>
-              <p className="text-[9px] text-blue-100 font-bold italic opacity-75">
-                {nextMilestone.days - daysSober} days until you unlock {nextMilestone.icon} {nextMilestone.label}
-              </p>
-            </div>
-          </div>
 
-          <div className="mt-10 pt-8 border-t border-blue-400/30 grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Current Streak</p>
-              <div className="flex items-center justify-center gap-1 mt-1">
-                <span className="text-xl font-black text-white">{streak}</span>
-                <span className="text-[10px] font-bold text-orange-400 italic">🔥</span>
-              </div>
-            </div>
-            <div className="text-center border-x border-blue-400/20 px-4">
-              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Total Wins</p>
-              <div className="flex items-center justify-center gap-1 mt-1">
-                <span className="text-xl font-black text-white">{moodLogs.length}</span>
-                <span className="text-[10px] font-bold text-emerald-400">🛡️</span>
-              </div>
-            </div>
-            <div className="text-center">
-              <p className="text-[8px] text-blue-200 font-black uppercase tracking-widest whitespace-nowrap">Community Points</p>
-              <div className="flex items-center justify-center gap-1 mt-1">
-                <span className="text-xl font-black text-white">{userProfile?.points || 0}</span>
-                <span className="text-[10px] font-bold text-amber-400">✨</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* AI REFLECTION CARD */}
-        {currentUser && (
-          <AIReflectionCard userId={currentUser.uid} moodLogs={moodLogs} />
-        )}
-      </div>
 
-        {/* BADGES SECTION */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-xl font-black text-white italic uppercase tracking-tight flex items-center gap-2">
-              <Trophy className="text-amber-500" size={20} /> Achievement Tiers
-            </h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl space-y-3">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Badges</p>
-              <div className="flex flex-wrap gap-3">
-                {userProfile?.badges && userProfile.badges.length > 0 ? (
-                  userProfile.badges.map((badge, idx) => (
-                    <div key={idx} className="bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-xl flex items-center gap-2">
-                      <span className="text-lg">🏅</span>
-                      <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">{badge}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-[10px] text-slate-600 font-bold italic">No badges yet. Attend meetings to earn them!</p>
-                )}
-              </div>
-            </div>
 
-            <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl space-y-4">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rank Progression</p>
-              <div className="space-y-2">
-                <div className="flex justify-between text-[8px] font-black text-slate-500 uppercase">
-                  <span>Newcomer</span>
-                  <span>Contributor (100)</span>
-                  <span>Guide (500)</span>
-                  <span>Mentor (1000)</span>
-                </div>
-                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${Math.min((points / 1000) * 100, 100)}%` }}
-                    className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.5)]"
-                  />
-                </div>
-                <p className="text-[9px] text-slate-400 font-bold italic">
-                  {points < 100 ? `${100 - points} points to Contributor` : 
-                   points < 500 ? `${500 - points} points to Guide` :
-                   points < 1000 ? `${1000 - points} points to Mentor` :
-                   "Maximum Rank Reached!"}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* SMART MENTOR MATCHING */}
-      {tab === 'sponsors' && userProfile?.recoveryNeeds && userProfile.recoveryNeeds.length > 0 && (
-        <div className="px-6 mb-8">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-[3rem] shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-              <Sparkles size={100} />
-            </div>
-            <div className="relative z-10 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md border border-white/30">
-                  <Heart className="text-white" size={24} />
-                </div>
-                <h3 className="text-2xl font-black text-white italic uppercase tracking-tight">AI Mentor Match</h3>
-              </div>
-              <p className="text-blue-100 text-sm font-medium leading-relaxed max-w-xs">
-                Let Gemini find the perfect mentor based on your recovery needs: 
-                <span className="font-bold"> {userProfile.recoveryNeeds.join(', ')}</span>.
-              </p>
-              <button 
-                onClick={handleAIMentorMatch}
-                className="px-8 py-4 bg-white text-blue-700 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-50 transition-all shadow-xl active:scale-95 flex items-center gap-2"
-              >
-                Find My Best Match <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* NEIGHBORHOOD FEED */}
-      {userProfile?.neighborhood && (
-        <NeighborhoodFeed 
-          neighborhood={userProfile.neighborhood} 
-          userId={currentUser?.uid || ''}
-          userProfile={userProfile}
-        />
-      )}
 
-      {/* RECOMMENDED SPONSORS */}
-      {topMatches.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-xl font-black text-white italic uppercase tracking-tight flex items-center gap-2">
-              <UserCheck className="text-blue-500" size={20} /> Top Mentor Matches
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {topMatches.map(({ sponsor, score }) => (
-              <button 
-                key={sponsor.id}
-                onClick={() => onSponsorClick(sponsor)}
-                className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] hover:border-blue-500/50 transition-all text-left group shadow-lg"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500">
-                    <BadgeCheck size={24} />
-                  </div>
-                  <div className="px-3 py-1 bg-blue-600/10 rounded-full">
-                    <span className="text-[10px] font-black text-blue-500 uppercase">{score > 4 ? 'Best' : 'Great'} Match</span>
-                  </div>
-                </div>
-                <h4 className="text-lg font-black text-white italic leading-tight mb-1">{sponsor.name}</h4>
-                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-4">{sponsor.neighborhood} • {sponsor.years}yrs Strong</p>
-                <div className="flex flex-wrap gap-1.5 line-clamp-1 mb-4">
-                  {sponsor.specialties.slice(0, 2).map(s => (
-                    <span key={s} className="px-2 py-0.5 bg-slate-800 rounded-md text-[9px] font-black text-slate-400 border border-slate-700 uppercase">{s}</span>
-                  ))}
-                </div>
-                <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest group-hover:translate-x-1 transition-transform">Connect Now</span>
-                  <ChevronRight size={16} className="text-slate-700" />
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* MOOD TREND */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
-            <TrendingUp className="text-blue-500" /> Daily Pulse
-          </h2>
-          <MoodLogger onLog={onLogMood} />
-          
-          <div className="bg-slate-900/30 border border-slate-800 p-6 rounded-[2rem] space-y-4">
-             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recent Logs</h4>
-             {moodLogs.length === 0 ? (
-               <p className="text-xs text-slate-600 font-bold italic">No logs yet. Start today!</p>
-             ) : (
-               <div className="space-y-3">
-                 {moodLogs.slice(0, 3).map(log => (
-                   <div key={log.id} className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-slate-800">
-                     <div className={`p-2 rounded-lg ${
-                       log.mood === 'great' ? 'bg-emerald-500/20 text-emerald-500' :
-                       log.mood === 'good' ? 'bg-blue-500/20 text-blue-500' :
-                       log.mood === 'okay' ? 'bg-slate-500/20 text-slate-500' :
-                       log.mood === 'struggling' ? 'bg-orange-500/20 text-orange-500' :
-                       'bg-rose-500/20 text-rose-500'
-                     }`}>
-                       {log.mood === 'great' ? <Sparkles size={16} /> :
-                        log.mood === 'good' ? <Smile size={16} /> :
-                        log.mood === 'okay' ? <Meh size={16} /> :
-                        log.mood === 'struggling' ? <Frown size={16} /> :
-                        <ShieldAlert size={16} />}
-                     </div>
-                     <div className="flex-1">
-                       <p className="text-xs font-bold text-slate-100 line-clamp-1">{log.note || 'No note added'}</p>
-                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">
-                         {log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp ? (log.timestamp as any).toDate().toLocaleDateString() : 'Just now'}
-                       </p>
-                     </div>
-                   </div>
-                 ))}
-               </div>
-             )}
-          </div>
-        </div>
 
-        {/* MILESTONES */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-black text-white italic flex items-center gap-2">
-            <Trophy className="text-amber-500" /> Milestones
-          </h2>
-          <div className="grid grid-cols-2 gap-4">
-            {milestones.map((m) => {
-              const isUnlocked = daysSober >= m.days;
-              return (
-                <div 
-                  key={m.label}
-                  className={`p-6 rounded-[2rem] border transition-all relative overflow-hidden ${
-                    isUnlocked 
-                      ? 'bg-slate-800/80 border-amber-500/30' 
-                      : 'bg-slate-900/30 border-slate-800 grayscale'
-                  }`}
-                >
-                  <div className="text-3xl mb-2">{m.icon}</div>
-                  <h4 className="text-sm font-black text-white uppercase">{m.label}</h4>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase">{m.days} Days</p>
-                  {isUnlocked && <BadgeCheck size={16} className="absolute top-4 right-4 text-amber-500" />}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
-const ChatView = ({ session, messages, currentUser, onBack, onSendMessage, onTyping }: { 
-  session: ChatSession, 
-  messages: Message[], 
-  currentUser: FirebaseUser | null,
-  onBack: () => void,
-  onSendMessage: (text: string) => void,
-  onTyping: (isTyping: boolean) => void
-}) => {
-  const [text, setText] = useState('');
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+// --- MAIN APPLICATION ---
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (text.trim()) {
-      onSendMessage(text);
-      setText('');
-    }
-  };
 
-  return (
-    <div className="bg-slate-900/50 border border-slate-800 rounded-[2.5rem] flex flex-col h-[70vh] overflow-hidden shadow-2xl relative">
-       <div className="p-6 border-b border-slate-800 flex items-center justify-between sticky top-0 bg-[#0f172a]/95 backdrop-blur-md z-10">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full text-slate-400"><ArrowLeft size={20}/></button>
-            <div>
-              <h3 className="font-bold text-white leading-none mb-1">
-                {currentUser?.uid === session.userId ? session.mentorName : session.userName}
-              </h3>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                <ShieldCheck size={10} className="text-blue-500" /> Peer Support Connection
-              </p>
-            </div>
-          </div>
-       </div>
-
-       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4 opacity-30">
-               <MessageCircle size={48} />
-               <p className="text-sm font-medium">Say hi to start your support journey.</p>
-            </div>
-          ) : (
-            messages.map((m, idx) => {
-              const isOwn = m.senderId === currentUser?.uid;
-              return (
-                <motion.div 
-                  initial={{ opacity: 0, x: isOwn ? 20 : -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  key={m.id || idx} 
-                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`max-w-[80%] p-4 rounded-2xl text-sm ${isOwn ? 'bg-blue-600 text-white rounded-tr-none shadow-lg' : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'}`}>
-                    {m.text}
-                    {m.timestamp && (
-                      <p className={`text-[8px] mt-1 font-bold ${isOwn ? 'text-blue-200' : 'text-slate-500'}`}>
-                        {(m.timestamp as any)?.toDate?.() ? (m.timestamp as any).toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Sending...'}
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} />
-       </div>
-
-       <form onSubmit={handleSend} className="p-6 bg-[#0f172a]/95 border-t border-slate-800 flex gap-2">
-          <input 
-            type="text" 
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              onTyping(true);
-            }}
-            onBlur={() => onTyping(false)}
-            placeholder="Write a message..."
-            className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 transition-all text-white"
-          />
-          <button type="submit" className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-500 transition-all shadow-lg active:scale-95">
-            <Send size={20} />
-          </button>
-       </form>
-    </div>
-  );
-};
-
-const AISupportView = ({ currentUser, moodLogs }: { currentUser: FirebaseUser | null, moodLogs: MoodEntry[] }) => {
-  const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
-    { role: 'model', text: "Hello! I'm your Spokane Recovery Guide. How's your journey going today?" }
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCrisis, setIsCrisis] = useState(false);
-  const [anxietyDetected, setAnxietyDetected] = useState(false);
-  const scrollRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Vibe Check Logic
-  useEffect(() => {
-    if (messages.length > 3 || moodLogs.length > 0) {
-      const checkMood = async () => {
-        try {
-          const res = await fetch('/api/ai/analyze-mood', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              moodLogs: moodLogs.slice(-5), 
-              chatHistory: messages.slice(-5) 
-            })
-          });
-          const data = await res.json();
-          if (data.triggerVibeCheck) {
-            setAnxietyDetected(true);
-            setMessages(prev => [...prev, { 
-              role: 'model', 
-              text: `⚠️ Vibe Check: ${data.recommendation}. Would you like to try a 1-minute grounding exercise?` 
-            }]);
-          }
-        } catch (e) {
-          console.error("Mood analysis failed");
-        }
-      };
-      const timer = setTimeout(checkMood, 15000); // Check after some interaction
-      return () => clearTimeout(timer);
-    }
-  }, [messages.length]);
-
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMsg = input;
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/gemini/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt: userMsg, 
-          history: messages,
-          isCrisis 
-        })
-      });
-      const data = await res.json();
-      if (data.text) {
-        setMessages(prev => [...prev, { role: 'model', text: data.text }]);
-      }
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'model', text: "I'm having a little trouble connecting. Check your local Spokane resources or reach out to a peer mentor!" }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className={`bg-slate-900/50 border rounded-[2.5rem] flex flex-col h-[70vh] overflow-hidden transition-all duration-500 ${isCrisis ? 'border-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.2)]' : 'border-slate-800'}`}>
-      <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Sparkles className={isCrisis ? 'text-rose-500' : 'text-blue-500'} />
-          <div>
-            <h3 className="font-bold text-white">{isCrisis ? 'Crisis Assistant' : 'Recovery Guide'}</h3>
-            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-              {isCrisis ? 'Safety Mode Active' : 'AI Assistance • Gemini'}
-            </p>
-          </div>
-        </div>
-        <button 
-          onClick={() => setIsCrisis(!isCrisis)}
-          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCrisis ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-        >
-          {isCrisis ? 'Deactivate Crisis Mode' : 'I am in Crisis'}
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {isCrisis && messages.length === 1 && (
-          <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl mb-4">
-            <p className="text-xs text-rose-400 font-bold leading-relaxed">
-              🆘 Crisis mode active. I will prioritize immediate safety strategies and help you ground yourself. Remember you can call 988 at any time.
-            </p>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl text-sm ${m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700'}`}>
-              {m.text}
-            </div>
-          </div>
-        ))}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800 p-4 rounded-2xl rounded-tl-none animate-pulse text-slate-500 italic text-xs">
-              Thinking...
-            </div>
-          </div>
-        )}
-        <div ref={scrollRef} />
-      </div>
-      <form onSubmit={handleSend} className="p-6 border-t border-slate-800 flex gap-2">
-        <input 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about local resources, coping tips..."
-          className="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-2xl text-sm focus:outline-none focus:border-blue-500 text-white"
-        />
-        <button type="submit" disabled={isLoading} className="p-4 bg-blue-600 text-white rounded-2xl disabled:opacity-50">
-          <Send size={20} />
-        </button>
-      </form>
-    </div>
-  );
-};
 
 export default function App() {
-  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai'>('meetings');
+  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -2134,6 +1593,12 @@ export default function App() {
 
           {tab === 'ai' && <AISupportView currentUser={currentUser} moodLogs={moodLogs} />}
 
+          {tab === 'literature' && (
+            <motion.div key="literature" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+               <LiteratureSearch />
+            </motion.div>
+          )}
+
           {tab === 'resources' && (
             <motion.div
               key="resources"
@@ -2307,6 +1772,7 @@ export default function App() {
           { id: 'hub', icon: Trophy, label: 'Hub' },
           { id: 'sponsors', icon: UserCheck, label: 'Partners' },
           { id: 'resources', icon: Heart, label: 'Bento' },
+          { id: 'literature', icon: BookOpen, label: 'Read' },
           { id: 'ai', icon: Sparkles, label: 'Guide' },
           { id: 'chat', icon: Mail, label: 'Inbox', badge: unreadCount },
           { id: 'profile', icon: Settings2, label: 'More' }

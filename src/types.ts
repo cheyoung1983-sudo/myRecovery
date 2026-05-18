@@ -79,6 +79,7 @@ export interface MentorReview {
   id: string;
   mentorId: string;
   userId: string;
+  userName?: string;
   rating: number;
   comment: string;
   timestamp: any;

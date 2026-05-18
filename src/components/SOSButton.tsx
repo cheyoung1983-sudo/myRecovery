@@ -20,6 +20,8 @@ export const SOSButton: React.FC<SOSButtonProps> = ({ userProfile, userId }) => 
     if (!userProfile) return;
     setLoading(true);
     try {
+      const alertedUids: string[] = [];
+
       // 1. Send notification to emergency mentor if assigned
       if (userProfile.emergencyMentorId) {
         await addDoc(collection(db, 'chats', `${userId}_${userProfile.emergencyMentorId}`, 'messages'), {
@@ -29,6 +31,7 @@ export const SOSButton: React.FC<SOSButtonProps> = ({ userProfile, userId }) => 
           isCrisis: true
         });
         setSentTo(prev => [...prev, 'Emergency Mentor']);
+        alertedUids.push(userProfile.emergencyMentorId);
       }
 
       // 2. Find "Crisis-Available" Sponsors
@@ -49,9 +52,22 @@ export const SOSButton: React.FC<SOSButtonProps> = ({ userProfile, userId }) => 
           timestamp: serverTimestamp(),
           isCrisis: true
         });
+        alertedUids.push(doc.id);
       }
       
       setSentTo(prev => [...prev, 'Crisis Response Network']);
+
+      // 3. Trigger Server-Side Push Notification Broadcast
+      await fetch('/api/sos/alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          userProfile,
+          targetUids: alertedUids
+        })
+      });
+
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'SOS');
     } finally {

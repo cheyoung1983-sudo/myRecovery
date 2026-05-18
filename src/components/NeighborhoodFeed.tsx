@@ -3,21 +3,24 @@ import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, increment, setDoc } from 'firebase/firestore';
 import { NeighborhoodAnnouncement, NeighborhoodPost, UserProfile } from '../types';
-import { Bell, Info, AlertTriangle, MapPin, Send, Heart, UserPlus } from 'lucide-react';
+import { Bell, Info, AlertTriangle, MapPin, Send, Heart, UserPlus, Flag, MoreHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ReportModal } from './ReportModal';
 
 interface NeighborhoodFeedProps {
   neighborhood: string;
   userId: string;
   userProfile: UserProfile | null;
+  onShowToast?: (msg: string, type: 'success' | 'alert' | 'info') => void;
 }
 
-export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood, userId, userProfile }) => {
+export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood, userId, userProfile, onShowToast }) => {
   const [announcements, setAnnouncements] = useState<NeighborhoodAnnouncement[]>([]);
   const [posts, setPosts] = useState<NeighborhoodPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState('');
   const [posting, setPosting] = useState(false);
+  const [reportingPost, setReportingPost] = useState<NeighborhoodPost | null>(null);
 
   useEffect(() => {
     // Announcements (Admin)
@@ -28,12 +31,12 @@ export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood
       limit(3)
     );
 
-    // User Posts
+    // User Posts (Exclude reported ones if I had a hide system, but for now just show)
     const qPost = query(
       collection(db, 'neighborhoodPosts'),
       where('neighborhood', '==', neighborhood),
       orderBy('createdAt', 'desc'),
-      limit(10)
+      limit(15)
     );
 
     const unsubAnn = onSnapshot(qAnn, (snapshot) => {
@@ -63,9 +66,11 @@ export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood
         content: newPost,
         createdAt: serverTimestamp(),
         supportCount: 0,
+        reportCount: 0,
         isNewcomer: (userProfile?.points || 0) < 100
       });
       setNewPost('');
+      onShowToast?.("Post shared with neighbors", "success");
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'neighborhoodPosts');
     } finally {
@@ -142,7 +147,7 @@ export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood
               key={post.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-slate-900/40 border border-slate-800 p-5 rounded-[2rem] space-y-3 group"
+              className="bg-slate-900/40 border border-slate-800 p-5 rounded-[2rem] space-y-3 group relative overflow-hidden"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -153,9 +158,17 @@ export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
-                  {new Date(post.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
-                </span>
+                <div className="flex items-center gap-4">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest hidden sm:block">
+                    {new Date(post.createdAt?.toMillis?.() || Date.now()).toLocaleDateString()}
+                  </span>
+                  <button 
+                    onClick={() => setReportingPost(post)}
+                    className="p-1.5 text-slate-700 hover:text-rose-500 transition-colors rounded-lg bg-black/20 opacity-0 group-hover:opacity-100"
+                  >
+                    <Flag size={12} />
+                  </button>
+                </div>
               </div>
               
               <p className="text-xs text-slate-300 leading-relaxed font-medium">{post.content}</p>
@@ -174,6 +187,16 @@ export const NeighborhoodFeed: React.FC<NeighborhoodFeedProps> = ({ neighborhood
           ))}
         </AnimatePresence>
       </div>
+
+      <ReportModal
+        isOpen={!!reportingPost}
+        onClose={() => setReportingPost(null)}
+        targetId={reportingPost?.id || ''}
+        targetType="post"
+        targetOwnerId={reportingPost?.userId}
+        onSuccess={(msg) => onShowToast?.(msg, 'success')}
+      />
     </div>
   );
 };
+

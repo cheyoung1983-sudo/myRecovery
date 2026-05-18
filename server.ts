@@ -125,6 +125,59 @@ async function startServer() {
     }
   });
 
+  app.post("/api/ai/literature-search", async (req, res) => {
+    try {
+      const { query } = req.body;
+      const systemInstruction = `
+        You are a 12-Step Literature Expert helper for the "Sober Spokane" app.
+        Your goal is to help users find relevant passages, concepts, or quotes from 12-step literature (AA Big Book, 12 Steps and 12 Traditions, NA Basic Text, etc.) based on their current struggle or question.
+        
+        Guidelines:
+        1. Accuracy: Provide accurate quotes or paraphrases, citing the source (e.g., "Big Book, Page 84").
+        2. Compassion: Frame the literature in a helpful, supportive context.
+        3. Breadth: You can draw from Various fellowships (AA, NA, Al-Anon, etc.) depending on the user's query.
+        4. Focus on the solution.
+        5. Use Markdown for formatting.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `User Query: "${query}"\n\nFind relevant 12-step literature to help with this concern.`,
+        config: {
+          systemInstruction,
+          temperature: 0.5,
+        }
+      });
+
+      res.json({ text: response.text });
+    } catch (error: any) {
+      console.error("Literature Search Error:", error);
+      res.status(500).json({ error: "Failed to search literature" });
+    }
+  });
+
+  app.post("/api/sos/alert", async (req, res) => {
+    try {
+      const { userId, userProfile, targetUids } = req.body;
+      
+      console.log(`[SOS ALERT] User ${userId} (${userProfile.name}) triggered SOS.`);
+      console.log(`[SOS ALERT] Notifying target UIDs: ${targetUids.join(', ')}`);
+
+      // In a real app with FCM, we would iterate over targetUids, 
+      // fetch their fcmTokens from Firestore, and send a message via FCM.
+      // For now, this endpoint logs the intent and returns success.
+      
+      res.json({ 
+        success: true, 
+        message: "SOS signals broadcast to recovery network.",
+        notifiedCount: targetUids.length 
+      });
+    } catch (error: any) {
+      console.error("SOS Alert Error:", error);
+      res.status(500).json({ error: "Failed to broadcast SOS alert" });
+    }
+  });
+
   app.get("/api/transit/arrivals", async (req, res) => {
     try {
       const gtfsModule = await import('gtfs-realtime-bindings');
