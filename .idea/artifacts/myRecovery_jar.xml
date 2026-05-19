@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="myRecovery:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/myRecovery_jar</output-path>
+    <root id="archive" name="myRecovery.jar">
+      <element id="library" level="project" name="myRecovery" />
+      <element id="library" level="project" name="myRecovery1" />
+    </root>
+  </artifact>
+</component>

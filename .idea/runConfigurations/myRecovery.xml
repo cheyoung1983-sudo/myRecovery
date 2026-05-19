@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="myRecovery" type="Application" factoryName="Application">
+    <option name="UNNAMED_CLASS_CONFIGURATION" value="true" />
+    <option name="INCLUDE_PROVIDED_SCOPE" value="true" />
+    <module name="myRecovery" />
+    <option name="PROGRAM_PARAMETERS" value="$MODULE_DIR$" />
+    <shortenClasspath name="MANIFEST" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
