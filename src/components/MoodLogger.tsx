@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Smile, Meh, Frown, ShieldAlert } from 'lucide-react';
 import { MoodEntry } from '../types';
+import { trackEvent } from '../lib/firebase';
 
 interface MoodLoggerProps {
   onLog: (mood: MoodEntry['mood'], note: string) => void;
@@ -30,7 +31,10 @@ export const MoodLogger: React.FC<MoodLoggerProps> = ({ onLog }) => {
         {moods.map((m) => (
           <button
             key={m.type}
-            onClick={() => setSelectedMood(m.type)}
+            onClick={() => {
+              setSelectedMood(m.type);
+              trackEvent('mood_button_click', { mood: m.type });
+            }}
             className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
               selectedMood === m.type 
                 ? `${m.color} text-white scale-105 shadow-lg` 
@@ -54,6 +58,10 @@ export const MoodLogger: React.FC<MoodLoggerProps> = ({ onLog }) => {
           onClick={() => {
             if (selectedMood) {
               onLog(selectedMood, note);
+              trackEvent('mood_logged', {
+                mood: selectedMood,
+                hasNote: note.length > 0
+              });
               setNote('');
               setSelectedMood(null);
             }

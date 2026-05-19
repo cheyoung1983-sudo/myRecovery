@@ -62,6 +62,7 @@ import { MeetingDetailModal } from './components/MeetingDetailModal';
 import { WarmHandshakeModal } from './components/WarmHandshakeModal';
 import { MeetingMap } from './components/MeetingMap';
 import { ChatView } from './components/ChatView';
+import { BetaFeedbackModal } from './components/BetaFeedbackModal';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -176,630 +177,6 @@ const INITIAL_SPONSORS: any[] = [
   }
 ];
 
-// --- COMPONENTS ---
-
-const GroundingTool = () => {
-  const [step, setStep] = useState(0);
-  const groundingSteps = [
-    { label: "Look: 5 things you can see", icon: <Eye className="text-blue-400" /> },
-    { label: "Touch: 4 things you can feel", icon: <Fingerprint className="text-emerald-400" /> },
-    { label: "Hear: 3 things you can hear", icon: <Volume2 className="text-purple-400" /> },
-    { label: "Smell: 2 things you can smell", icon: <Flower2 className="text-pink-400" /> },
-    { label: "Taste: 1 thing you can taste", icon: <Coffee className="text-amber-400" /> },
-  ];
-
-  return (
-    <div className="bg-slate-800/50 rounded-3xl p-8 border border-slate-700 shadow-xl">
-      <div className="text-center mb-8">
-        <Wind className="mx-auto text-blue-400 mb-4 animate-pulse" size={48} />
-        <h2 className="text-2xl font-bold text-white uppercase tracking-tighter">Feeling Overwhelmed?</h2>
-        <p className="text-slate-400 text-sm">Let's stay present together.</p>
-      </div>
-      
-      <div className="flex flex-col items-center text-center">
-        <motion.div 
-          key={step}
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="mb-6 p-8 bg-slate-900 rounded-full"
-        >
-          {groundingSteps[step].icon}
-        </motion.div>
-        <motion.p 
-          key={groundingSteps[step].label}
-          initial={{ y: 10, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="text-2xl font-medium mb-10 text-slate-100"
-        >
-          {groundingSteps[step].label}
-        </motion.p>
-        
-        <button 
-          onClick={() => setStep((prev) => (prev + 1) % 5)}
-          className="w-full py-5 bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold text-white shadow-lg shadow-blue-900/30 transition-all active:scale-95"
-        >
-          {step === 4 ? "Restart Exercise" : "Next Step"}
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const MeetingCard: React.FC<{ meeting: Meeting, onSelect: (m: Meeting) => void }> = ({ meeting, onSelect }) => {
-  const transitLink = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${meeting.address}, Spokane, WA`)}&travelmode=transit`;
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-slate-800/40 border border-slate-800 p-5 rounded-3xl hover:border-blue-500/40 transition-all group shadow-sm hover:shadow-md"
-    >
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex gap-2">
-          <span className={`text-[10px] font-black px-2 py-1 bg-slate-900 rounded border border-slate-700 ${meeting.fellowship === 'AA' ? 'text-blue-400' : 'text-purple-400'}`}>
-            {meeting.fellowship}
-          </span>
-          {meeting.format && (
-            <span className="text-[10px] font-black px-2 py-1 bg-blue-600/10 text-blue-400 rounded border border-blue-600/20 uppercase tracking-tight">
-              {meeting.format}
-            </span>
-          )}
-        </div>
-        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{meeting.neighborhood}</span>
-      </div>
-      <h3 className="text-xl font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">{meeting.name}</h3>
-      <div className="flex flex-col gap-1 mb-6 text-slate-400 text-sm">
-        <p className="flex items-center gap-1.5"><Clock size={14} /> {meeting.day} at {meeting.time}</p>
-        <p className="flex items-center gap-1.5 line-clamp-1"><MapPin size={14} /> {meeting.address}</p>
-        <div className="pt-2">
-          <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
-        </div>
-      </div>
-      <div className="flex gap-2.5">
-        <a 
-          href={transitLink} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="flex-1 bg-slate-800 hover:bg-slate-750 p-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-slate-700/50"
-        >
-          <Bus size={16} /> STA BUS
-        </a>
-        <button 
-          onClick={() => onSelect(meeting)}
-          className="flex-1 bg-blue-600/10 text-blue-400 border border-blue-600/20 hover:bg-blue-600 hover:text-white p-3.5 rounded-xl text-xs font-bold transition-all"
-        >
-          DETAILS
-        </button>
-      </div>
-    </motion.div>
-  );
-};
-
-const ResourceCard: React.FC<{ resource: Resource }> = ({ resource }) => {
-  return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-slate-800/20 border border-slate-800 p-6 rounded-3xl space-y-4"
-    >
-      <div className="flex justify-between items-start">
-        <div>
-          <span className="text-[10px] font-black px-2 py-1 bg-blue-600/10 text-blue-500 rounded border border-blue-500/20 uppercase tracking-widest leading-none">
-            {resource.category}
-          </span>
-          <h3 className="text-xl font-bold text-white mt-3">{resource.name}</h3>
-        </div>
-        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{resource.neighborhood}</div>
-      </div>
-      <p className="text-slate-400 text-sm leading-relaxed">{resource.description}</p>
-      <div className="flex flex-col gap-2 pt-2">
-        <div className="flex items-center gap-2 text-xs text-slate-300">
-          <MapPin size={14} className="text-blue-500" />
-          {resource.address}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-slate-300">
-          <Phone size={14} className="text-emerald-500" />
-          {resource.phone}
-        </div>
-      </div>
-      <a 
-        href={resource.website} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors border border-slate-700/50"
-      >
-        <Eye size={16} /> VISIT WEBSITE
-      </a>
-    </motion.div>
-  );
-};
-
-const SponsorCard: React.FC<{ sponsor: Sponsor, onReachOut: (s: Sponsor) => void }> = ({ sponsor, onReachOut }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="bg-slate-800/40 border border-slate-800 p-6 rounded-3xl shadow-lg relative overflow-hidden"
-    >
-      <div className="absolute top-0 right-0 p-3 opacity-10">
-        <Heart size={80} />
-      </div>
-      <div className="flex items-center gap-4 mb-5 relative z-1">
-        <div className="w-14 h-14 bg-blue-600/20 border border-blue-500/30 rounded-2xl flex items-center justify-center font-bold text-blue-400 text-2xl shadow-inner">
-          {sponsor.name[0]}
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-white flex items-center gap-1.5">
-            {sponsor.name} 
-          </h3>
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-xs text-blue-400 font-medium">{sponsor.years} Years Sober</p>
-            {sponsor.isVerified && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-600/10 border border-blue-500/20 rounded-md text-[9px] font-black uppercase tracking-widest text-blue-400">
-                <BadgeCheck size={10} /> Verified
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-      <p className="text-slate-400 text-sm mb-5 leading-relaxed italic">"{sponsor.bio}"</p>
-      <div className="flex flex-wrap gap-2 mb-8 lowercase">
-        {sponsor.specialties.map(tag => (
-          <span key={tag} className="text-[10px] font-semibold bg-slate-900 border border-slate-700/50 px-2.5 py-1 rounded-full text-slate-300">#{tag}</span>
-        ))}
-      </div>
-      
-      <div className="flex gap-2">
-        <button 
-          onClick={() => onReachOut(sponsor)}
-          className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
-        >
-          <MessageCircle size={20} /> Reach Out
-        </button>
-        <button 
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="px-6 py-4 bg-slate-900 border border-slate-700 text-slate-400 hover:text-white rounded-2xl font-bold transition-all"
-        >
-           {isExpanded ? <ChevronRight className="rotate-90" /> : <ChevronRight />}
-        </button>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden mt-6 pt-6 border-t border-slate-800"
-          >
-            <MentorReviews mentorId={sponsor.id} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-};
-
-const MeetingMap = ({ lat, lng, name }: { lat: number, lng: number, name: string }) => {
-  return (
-    <div className="w-full h-48 sm:h-64 rounded-3xl overflow-hidden border border-slate-800 shadow-inner group relative">
-      <Map
-        defaultCenter={{ lat, lng }}
-        defaultZoom={15}
-        mapId="DEMO_MAP_ID"
-        disableDefaultUI={true}
-        gestureHandling={'greedy'}
-        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-        className="w-full h-full"
-      >
-        <AdvancedMarker position={{ lat, lng }} title={name}>
-          <Pin background="#3b82f6" glyphColor="#fff" borderColor="#1e3a8a" />
-        </AdvancedMarker>
-      </Map>
-      <div className="absolute top-4 left-4 p-2 bg-slate-900/80 backdrop-blur-md rounded-lg border border-slate-700 pointer-events-none">
-        <p className="text-[10px] font-black text-white uppercase tracking-widest">Live Interactive Map</p>
-      </div>
-    </div>
-  );
-};
-
-const MeetingDetailModal = ({ meeting, onClose, sponsors, onConnect, reminders, onToggleReminder, onLogAttendance, attendance, userProfile, userId }: { 
-  meeting: Meeting, 
-  onClose: () => void, 
-  sponsors: Sponsor[], 
-  onConnect: (s: Sponsor) => void,
-  reminders: string[],
-  onToggleReminder: (id: string) => void,
-  onLogAttendance: (m: Meeting) => void,
-  attendance: AttendanceRecord[],
-  userProfile: UserProfile | null,
-  userId: string
-}) => {
-  const transitLink = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${meeting.address}, Spokane, WA`)}&travelmode=transit`;
-
-  const homeGroupSponsors = useMemo(() => {
-    return sponsors.filter(s => meeting.sponsors?.includes(s.id));
-  }, [meeting, sponsors]);
-
-  const suggestedSponsors = useMemo(() => {
-    if (homeGroupSponsors.length > 0) return [];
-    
-    // Logic for finding a suitable sponsor based on proximity or shared specialties
-    return sponsors
-      .filter(s => s.status === 'verified')
-      .sort((a, b) => {
-        // Priority 1: Same Neighborhood
-        const aSameNeighborhood = a.neighborhood === meeting.neighborhood;
-        const bSameNeighborhood = b.neighborhood === meeting.neighborhood;
-        if (aSameNeighborhood && !bSameNeighborhood) return -1;
-        if (!aSameNeighborhood && bSameNeighborhood) return 1;
-
-        // Priority 2: Shared Specialties (simple keyword check)
-        const formatLower = meeting.format?.toLowerCase() || '';
-        const aMatches = a.specialties.some(spec => formatLower.includes(spec.toLowerCase()));
-        const bMatches = b.specialties.some(spec => formatLower.includes(spec.toLowerCase()));
-        if (aMatches && !bMatches) return -1;
-        if (!aMatches && bMatches) return 1;
-
-        return 0;
-      })
-      .slice(0, 2);
-  }, [meeting, sponsors, homeGroupSponsors]);
-
-  const isReminderSet = reminders.includes(meeting.id);
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4"
-    >
-      <motion.div 
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        className="bg-[#0f172a] w-full max-w-2xl rounded-t-[2.5rem] sm:rounded-[2.5rem] border-t sm:border border-slate-800 shadow-2xl max-h-[95vh] overflow-y-auto"
-      >
-        <div className="sticky top-0 right-0 p-6 flex justify-end gap-3 z-[70] pointer-events-none">
-          <button 
-            onClick={() => onToggleReminder(meeting.id)}
-            className={`p-2.5 backdrop-blur-md rounded-full pointer-events-auto shadow-lg border transition-all ${
-              isReminderSet 
-                ? 'bg-blue-600 border-blue-500 text-white shadow-blue-500/20' 
-                : 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-blue-400'
-            }`}
-            title={isReminderSet ? "Remove Reminder" : "Set Reminder"}
-          >
-            {isReminderSet ? <BellOff size={24} /> : <Bell size={24} />}
-          </button>
-          <button 
-            onClick={onClose}
-            className="p-2.5 bg-slate-900/80 backdrop-blur-md rounded-full text-slate-400 hover:text-white pointer-events-auto shadow-lg border border-slate-800"
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="p-8 pt-0 space-y-10">
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 text-white text-[10px] font-black rounded-full uppercase tracking-widest shadow-sm ${meeting.fellowship === 'AA' ? 'bg-blue-600' : 'bg-purple-600'}`}>
-                {meeting.fellowship}
-              </span>
-              {meeting.format && (
-                <span className="px-3 py-1 bg-slate-800 text-slate-300 text-[10px] font-black rounded-full uppercase tracking-widest border border-slate-700 shadow-sm">
-                  {meeting.format}
-                </span>
-              )}
-            </div>
-            <h2 className="text-4xl font-black text-white tracking-tight">{meeting.name}</h2>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-800/30 p-5 rounded-2xl border border-slate-700/50">
-              <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1.5">Schedule</p>
-              <div className="flex items-center gap-2 text-slate-100 font-bold">
-                <Clock size={16} className="text-blue-400"/>
-                {meeting.day}s, {meeting.time}
-              </div>
-            </div>
-            <div className="bg-slate-800/30 p-5 rounded-2xl border border-slate-700/50">
-              <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-1.5">Accessibility</p>
-              <div className="flex items-center gap-2 text-slate-100 font-bold">
-                <Accessibility size={16} className="text-emerald-400"/>
-                Wheelchair Access
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-              <MapPin size={14} /> Location Details
-            </h4>
-            
-            <MeetingMap lat={meeting.lat} lng={meeting.lng} name={meeting.name} />
-
-            <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
-
-            <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-3xl shadow-inner">
-              <p className="text-lg text-slate-100 font-bold mb-1">{meeting.address}</p>
-              <p className="text-sm text-slate-500 font-medium mb-6 uppercase tracking-wider">{meeting.neighborhood} Spokane</p>
-              
-              {meeting.description && (
-                <div className="flex gap-3.5 text-sm text-blue-200 bg-blue-900/15 p-4 rounded-2xl border border-blue-900/30 leading-relaxed shadow-sm">
-                  <span className="shrink-0 mt-0.5"><Info size={18} className="text-blue-400" /></span>
-                  <p>{meeting.description}</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <a 
-              href={transitLink}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-3 py-5 bg-slate-100 text-slate-900 rounded-[1.25rem] font-bold shadow-lg hover:bg-white transition-all transform hover:-translate-y-0.5"
-            >
-              <Bus size={20} />
-              Open Bus Route
-            </a>
-            <div className="flex items-center justify-center gap-3 py-5 bg-slate-800 border border-slate-700 text-slate-300 rounded-[1.25rem]">
-              <ShieldCheck size={20} className="text-emerald-400" />
-              <span className="font-bold">{meeting.isOpen ? 'Open Meeting' : 'Closed Meeting'}</span>
-            </div>
-          </div>
-
-          {/* LOG ATTENDANCE BUTTON */}
-          <button 
-            onClick={() => onLogAttendance(meeting)}
-            disabled={attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0])}
-            className={`w-full py-6 rounded-[1.5rem] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${
-              attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0])
-                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 cursor-default'
-                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-900/40 active:scale-[0.98]'
-            }`}
-          >
-            {attendance.some(a => a.meetingId === meeting.id && a.date === new Date().toISOString().split('T')[0]) ? (
-              <><Check size={24} /> Attendance Logged</>
-            ) : (
-              <><Calendar size={24} /> Log My Attendance</>
-            )}
-          </button>
-
-          {/* MEETING BUDDY BEACON */}
-          <MeetingBuddyBeacon 
-            meetingId={meeting.id} 
-            userId={userId} 
-            user={userProfile} 
-          />
-
-          <div className="pt-6 border-t border-slate-800/50">
-            <div className="bg-gradient-to-br from-blue-600/10 to-blue-900/10 border border-blue-500/20 p-8 rounded-[2rem] text-center shadow-sm">
-              <div className="w-14 h-14 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
-                <Heart size={28} className="text-blue-500" />
-              </div>
-              <h3 className="text-xl font-black text-white">Feeling anxious?</h3>
-              <p className="text-sm text-slate-400 mt-2 mb-8 max-w-sm mx-auto leading-relaxed">
-                Walking into a new room can be scary. Connect with a local sponsor who attends this meeting to meet you at the door.
-              </p>
-              
-              {homeGroupSponsors.length > 0 ? (
-                <div className="space-y-3 mb-6">
-                  <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest text-left mb-2 px-1">Frequent Attendees</p>
-                  {homeGroupSponsors.map(s => (
-                    <button 
-                      key={s.id}
-                      onClick={() => onConnect(s)}
-                      className="w-full flex items-center justify-between p-4 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-blue-500/50 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center text-blue-400 font-bold text-xs">
-                          {s.name[0]}
-                        </div>
-                        <span className="font-bold text-white text-sm">{s.name}</span>
-                      </div>
-                      <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-400 transition-colors" />
-                    </button>
-                  ))}
-                </div>
-              ) : suggestedSponsors.length > 0 ? (
-                <div className="space-y-3 mb-6">
-                  <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest text-left mb-2 px-1">Suggested Matches ({meeting.neighborhood})</p>
-                  {suggestedSponsors.map(s => (
-                    <button 
-                      key={s.id}
-                      onClick={() => onConnect(s)}
-                      className="w-full flex items-center justify-between p-4 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-blue-500/50 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-emerald-600/20 rounded-lg flex items-center justify-center text-emerald-500 font-bold text-xs uppercase tracking-tighter">
-                          {s.neighborhood?.slice(0, 3)}
-                        </div>
-                        <div className="text-left">
-                          <div className="flex items-center gap-1.5">
-                            <span className="block font-bold text-white text-sm">{s.name}</span>
-                            {s.isVerified && <BadgeCheck size={14} className="text-blue-400" />}
-                          </div>
-                          <span className="text-[9px] text-slate-500 font-bold uppercase">{s.years} Years • {s.specialties[0]}</span>
-                        </div>
-                      </div>
-                      <ChevronRight size={16} className="text-slate-600 group-hover:text-blue-400 transition-colors" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <button 
-                  onClick={() => alert("We'll find a partner for you!")}
-                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-900/40 hover:bg-blue-500 transition-all active:scale-[0.98]"
-                >
-                  Request a "Meeting Buddy"
-                </button>
-              )}
-            </div>
-          </div>
-          
-          {/* REVIEWS SECTION */}
-          <div className="pt-10 border-t border-slate-800/50">
-            <MeetingReviews meetingId={meeting.id} />
-          </div>
-
-          <div className="pb-8 text-center pt-10">
-            <p className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.3em]">
-              Spokane Recovery Network • Community Feedback
-            </p>
-          </div>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
-const WarmHandshakeModal = ({ sponsor, onClose, onStartChat }: { sponsor: Sponsor, onClose: () => void, onStartChat: (text: string) => void }) => {
-  const templates = [
-    { id: 'crisis', label: 'Crisis Support', text: `I'm feeling a trigger and saw you specialize in ${sponsor.specialties[0]}. Can we talk?` },
-    { id: 'intro', label: 'Intro Request', text: `I'm new to myRecovery and looking for a guide who understands ${sponsor.specialties[1] || sponsor.specialties[0]}.` },
-  ];
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-    >
-      <motion.div 
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-[#1e293b] w-full max-w-md rounded-3xl p-8 border border-slate-700 shadow-2xl"
-      >
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-black text-white tracking-tight">Message {sponsor.name}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400"><X size={20}/></button>
-        </div>
-        
-        <p className="text-slate-400 mb-6 text-sm flex items-center gap-2">
-          <ShieldAlert size={14} className="text-blue-400"/>
-          Choose a pre-filled template to start securely.
-        </p>
-
-        <div className="space-y-4">
-          {templates.map(t => (
-            <button 
-              key={t.id}
-              className="w-full text-left p-6 bg-slate-800 hover:bg-slate-750 rounded-2xl border border-slate-700 transition-all hover:border-blue-500/50 shadow-sm"
-              onClick={() => {
-                onStartChat(t.text);
-              }}
-            >
-              <span className="block font-black text-blue-400 mb-1.5 uppercase tracking-widest text-[10px]">{t.label}</span>
-              <span className="text-sm italic text-slate-300 leading-relaxed font-medium">"{t.text}"</span>
-            </button>
-          ))}
-        </div>
-        
-        <div className="mt-8 text-center">
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">End-to-End Encrypted Communication</p>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
-const MoodLogger = ({ onLog }: { onLog: (mood: MoodEntry['mood'], note: string) => void }) => {
-  const [note, setNote] = useState('');
-  const [selectedMood, setSelectedMood] = useState<MoodEntry['mood'] | null>(null);
-
-  const moods: { type: MoodEntry['mood'], icon: React.ReactNode, color: string, label: string }[] = [
-    { type: 'great', icon: <Sparkles size={24} />, color: 'bg-emerald-500', label: 'Great' },
-    { type: 'good', icon: <Smile size={24} />, color: 'bg-blue-500', label: 'Good' },
-    { type: 'okay', icon: <Meh size={24} />, color: 'bg-slate-500', label: 'Okay' },
-    { type: 'struggling', icon: <Frown size={24} />, color: 'bg-orange-500', label: 'Struggling' },
-    { type: 'crisis', icon: <ShieldAlert size={24} />, color: 'bg-rose-500', label: 'Crisis' },
-  ];
-
-  return (
-    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-6">
-      <div className="text-center">
-        <h3 className="text-xl font-black text-white italic tracking-tight">How are you today?</h3>
-        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">Daily Wellness Check-in</p>
-      </div>
-
-      <div className="grid grid-cols-5 gap-2">
-        {moods.map((m) => (
-          <button
-            key={m.type}
-            onClick={() => setSelectedMood(m.type)}
-            className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${
-              selectedMood === m.type 
-                ? `${m.color} text-white scale-105 shadow-lg` 
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-750'
-            }`}
-          >
-            {m.icon}
-            <span className="text-[8px] font-black uppercase tracking-tighter">{m.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-3">
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Add a private note about your day..."
-          className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-sm text-white focus:border-blue-500 focus:outline-none transition-all resize-none h-24"
-        />
-        <button
-          onClick={() => {
-            if (selectedMood) {
-              onLog(selectedMood, note);
-              setNote('');
-              setSelectedMood(null);
-            }
-          }}
-          disabled={!selectedMood}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
-        >
-          Save Daily Log
-        </button>
-      </div>
-    </div>
-  );
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          
-
-
-
-
-
-
-
-
-
-
-
-
-
 // --- MAIN APPLICATION ---
 
 
@@ -880,6 +257,7 @@ export default function App() {
   const [resetSent, setResetSent] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allUserProfiles, setAllUserProfiles] = useState<(UserProfile & { uid: string })[]>([]);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   useEffect(() => {
     if (messaging) {
@@ -926,12 +304,12 @@ export default function App() {
       setCurrentUser(user);
       setIsAuthLoading(false);
       if (user) {
-        setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
         try {
           const userDoc = await getDoc(userDocRef);
+          let profile: UserProfile;
           if (!userDoc.exists()) {
-            const profile: UserProfile = {
+            profile = {
               email: user.email || '',
               name: user.displayName || 'Anonymous Player',
               photoURL: user.photoURL || '',
@@ -940,10 +318,11 @@ export default function App() {
               role: 'user'
             };
             await setDoc(userDocRef, profile);
-            setUserProfile(profile);
           } else {
-            setUserProfile(userDoc.data() as UserProfile);
+            profile = userDoc.data() as UserProfile;
           }
+          setUserProfile(profile);
+          setIsSuperAdmin(profile.role === 'admin');
         } catch (e) {
           handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
         }
@@ -1210,7 +589,13 @@ export default function App() {
       await updateDoc(doc(db, 'users', targetUid), {
         role: newRole
       });
-      triggerSystemNotification('Success', `User role updated to ${newRole}`);
+      // Sync Custom Claims via Backend
+      await fetch('/api/admin/sync-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: targetUid, role: newRole })
+      });
+      triggerSystemNotification('Success', `User role and security claims updated to ${newRole}`);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${targetUid}`);
     }
@@ -1756,7 +1141,13 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-8 border-t border-slate-800">
+                  <div className="pt-8 border-t border-slate-800 space-y-4">
+                    <button
+                      onClick={() => setIsFeedbackModalOpen(true)}
+                      className="w-full py-5 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-xl"
+                    >
+                      Give Beta Feedback
+                    </button>
                     <button onClick={handleLogout} className="w-full py-5 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-2xl font-black uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all shadow-xl shadow-rose-950/20">Sign Out</button>
                   </div>
                 </div>
@@ -1816,6 +1207,24 @@ export default function App() {
         )}
         {reachingOutTo && (
           <WarmHandshakeModal sponsor={reachingOutTo} onClose={() => setReachingOutTo(null)} onStartChat={(text) => handleStartChat(reachingOutTo, text)} />
+        )}
+        {currentUser && (
+          <BetaFeedbackModal
+            isOpen={isFeedbackModalOpen}
+            onClose={() => setIsFeedbackModalOpen(false)}
+            userId={currentUser.uid}
+            userName={userProfile?.name || 'User'}
+          />
+        )}
+        {currentUser && userProfile && incompleteProfile && (
+          <ProfileOnboarding
+            user={currentUser}
+            profile={userProfile}
+            onComplete={async () => {
+              const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+              setUserProfile(userDoc.data() as UserProfile);
+            }}
+          />
         )}
       </AnimatePresence>
 

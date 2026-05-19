@@ -12,7 +12,7 @@ export const RECOVERY_NEEDS = [
   "Early Recovery"
 ];
 
-export const SUPER_ADMIN_EMAIL = 'cheyoung1983@gmail.com';
+// export const SUPER_ADMIN_EMAIL = 'cheyoung1983@gmail.com'; // Deprecated in favor of Firestore roles
 
 export const SPOKANE_RESOURCES = [
   {

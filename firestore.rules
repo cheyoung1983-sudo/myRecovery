@@ -295,5 +295,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    match /feedback/{feedbackId} {
+      allow create: if isSignedIn();
+      allow read, write: if isAdmin();
+    }
   }
 }

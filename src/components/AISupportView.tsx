@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { MoodEntry } from '../types';
+import { trackEvent } from '../lib/firebase';
 
 interface AISupportViewProps {
   currentUser: FirebaseUser | null;
@@ -23,6 +24,12 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleCrisisToggle = () => {
+    const nextCrisisState = !isCrisis;
+    setIsCrisis(nextCrisisState);
+    trackEvent('ai_crisis_mode_toggle', { active: nextCrisisState });
+  };
+
   useEffect(() => {
     if (messages.length > 3 || moodLogs.length > 0) {
       const checkMood = async () => {
@@ -33,13 +40,13 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
             body: JSON.stringify({ 
               moodLogs: moodLogs.slice(-5), 
               chatHistory: messages.slice(-5) 
-              // Enforcing server-side security - Gemini API key is server-side
             })
           });
           const data = await res.json();
           if (data.triggerVibeCheck) {
             setAnxietyDetected(true);
-            setMessages(prev => [...prev, { 
+            trackEvent('ai_vibe_check_triggered', { vibe: data.vibe });
+            setMessages(prev => [...prev, {
               role: 'model', 
               text: `⚠️ Vibe Check: ${data.recommendation}. Would you like to try a 1-minute grounding exercise?` 
             }]);
@@ -61,6 +68,7 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsLoading(true);
+    trackEvent('ai_chat_message_sent', { isCrisis });
 
     try {
       const res = await fetch('/api/gemini/chat', {
@@ -96,7 +104,7 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
           </div>
         </div>
         <button 
-          onClick={() => setIsCrisis(!isCrisis)}
+          onClick={handleCrisisToggle}
           className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCrisis ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
         >
           {isCrisis ? 'Deactivate Crisis Mode' : 'I am in Crisis'}

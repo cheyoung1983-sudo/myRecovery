@@ -2,6 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
+import { getAnalytics, logEvent } from 'firebase/analytics';
+import * as Sentry from "@sentry/react";
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const config = {
@@ -18,6 +20,13 @@ const app = initializeApp(config);
 export const db = getFirestore(app, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
+
+export const trackEvent = (eventName: string, params?: Record<string, any>) => {
+  if (analytics) {
+    logEvent(analytics, eventName, params);
+  }
+};
 
 export { onMessage };
 export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
@@ -38,6 +47,7 @@ export const requestForToken = async () => {
       }
     }
   } catch (err) {
+    Sentry.captureException(err);
     console.error('An error occurred while retrieving token. ', err);
     return null;
   }
@@ -86,6 +96,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
+
+  Sentry.withScope((scope) => {
+    scope.setExtras(errInfo as any);
+    scope.setLevel("error");
+    Sentry.captureException(error);
+  });
+
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }

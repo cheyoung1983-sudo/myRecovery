@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Search, BookOpen, Quote, Sparkles, Send, Loader2, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { trackEvent } from '../lib/firebase';
 
 export const LiteratureSearch: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -15,6 +16,7 @@ export const LiteratureSearch: React.FC = () => {
 
     setLoading(true);
     setResult(null);
+    trackEvent('literature_search', { query });
 
     try {
       const response = await fetch('/api/ai/literature-search', {
