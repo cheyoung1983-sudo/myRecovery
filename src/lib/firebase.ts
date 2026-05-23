@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
+import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -15,7 +15,9 @@ const config = {
 };
 
 const app = initializeApp(config);
-export const db = getFirestore(app, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar');
