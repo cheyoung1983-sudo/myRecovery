@@ -7,7 +7,7 @@ interface Chip {
   label: string;
   days: number;
   color: string;
-  icon: React.ReactNode;
+  icon: React.ReactElement;
   unlocked: boolean;
 }
 
@@ -43,7 +43,7 @@ export const ChipCase: React.FC<ChipCaseProps> = ({ daysSober }) => {
               }}
               className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl relative ${chip.unlocked ? chip.color : 'bg-slate-800 border-2 border-dashed border-slate-700'}`}
             >
-              {React.cloneElement(chip.icon as React.ReactElement, { size: 32 })}
+              {React.cloneElement(chip.icon, { size: 32 } as any)}
               {chip.unlocked && (
                 <div className="absolute inset-0 rounded-full bg-white/10" />
               )}

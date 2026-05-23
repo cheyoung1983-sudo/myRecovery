@@ -9,6 +9,7 @@ import { AIReflectionCard } from './AIReflectionCard';
 interface RecoveryHubProps {
   daysSober: number;
   moodLogs: MoodEntry[];
+  streak: number;
   onLogMood: (mood: MoodEntry['mood'], note: string) => void;
   userProfile: UserProfile | null;
   topMatches: { sponsor: Sponsor; score: number }[];
@@ -21,6 +22,7 @@ interface RecoveryHubProps {
 export const RecoveryHub: React.FC<RecoveryHubProps> = ({ 
   daysSober, 
   moodLogs, 
+  streak,
   onLogMood,
   userProfile,
   topMatches,
@@ -41,29 +43,6 @@ export const RecoveryHub: React.FC<RecoveryHubProps> = ({
   const nextMilestone = milestones.find(m => daysSober < m.days) || milestones[milestones.length - 1];
   const prevMilestoneDays = milestones.filter(m => daysSober >= m.days).pop()?.days || 0;
   const progressToNext = ((daysSober - prevMilestoneDays) / (nextMilestone.days - prevMilestoneDays)) * 100;
-
-  const streak = useMemo(() => {
-    if (moodLogs.length === 0) return 0;
-    const dates = new Set(moodLogs.map(log => {
-      const date = log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp 
-        ? (log.timestamp as any).toDate() 
-        : new Date(log.timestamp);
-      return date.toISOString().split('T')[0];
-    }));
-    
-    let currentStreak = 0;
-    let checkDate = new Date();
-    
-    if (!dates.has(checkDate.toISOString().split('T')[0])) {
-      checkDate.setDate(checkDate.getDate() - 1);
-    }
-
-    while (dates.has(checkDate.toISOString().split('T')[0])) {
-      currentStreak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    }
-    return currentStreak;
-  }, [moodLogs]);
 
   const points = userProfile?.points || 0;
   const rank = points >= 1000 ? 'Mentor' : points >= 500 ? 'Guide' : points >= 100 ? 'Contributor' : 'Newcomer';

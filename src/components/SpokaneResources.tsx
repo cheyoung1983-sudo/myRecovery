@@ -23,11 +23,23 @@ export const SpokaneResources: React.FC = () => {
 
   useEffect(() => {
     const fetchResources = async () => {
+      // Load from cache first
+      const cached = localStorage.getItem('spokane_resources_cache');
+      if (cached) {
+        try {
+          setResources(JSON.parse(cached));
+          setIsLoading(false);
+        } catch (e) {
+          console.error("Cache parse error", e);
+        }
+      }
+
       try {
         const q = query(collection(db, 'spokaneResources'), orderBy('name', 'asc'));
         const snapshot = await getDocs(q);
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SpokaneResource));
         setResources(data);
+        localStorage.setItem('spokane_resources_cache', JSON.stringify(data));
       } catch (err) {
         console.error("Error fetching resources:", err);
       } finally {

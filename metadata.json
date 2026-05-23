@@ -1,5 +1,5 @@
 {
-  "name": "myRecovery Spokane",
+  "name": "myRecovery",
   "description": "An AI-powered recovery companion for Spokane, WA. Features Gemini-driven wellbeing reflections, smart peer matching, real-time 'Meeting Buddies', local community feeds, and an emergency SOS system with push notifications.",
   "requestFramePermissions": [
     "geolocation"

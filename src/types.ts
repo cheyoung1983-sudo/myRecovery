@@ -120,7 +120,7 @@ export interface MeetingBuddy {
   userName: string;
   userAlias?: string;
   arrivalTime: any;
-  status: 'waiting' | 'matched' | 'completed';
+  status: 'waiting' | 'matched' | 'completed' | 'on_my_way';
 }
 
 export interface NeighborhoodAnnouncement {

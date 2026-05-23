@@ -3,32 +3,69 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { MoodEntry } from '../types';
-import { trackEvent } from '../lib/firebase';
 
 interface AISupportViewProps {
   currentUser: FirebaseUser | null;
   moodLogs: MoodEntry[];
+  streak: number;
 }
 
-export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodLogs }) => {
+export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodLogs, streak }) => {
   const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
-    { role: 'model', text: "Hello! I'm your Spokane Recovery Guide. How's your journey going today?" }
+    { role: 'model', text: "Hello! I'm your myRecovery Guide. How's your journey going today?" }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isCrisis, setIsCrisis] = useState(false);
   const [anxietyDetected, setAnxietyDetected] = useState(false);
+  const [isGeneratingReflection, setIsGeneratingReflection] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleCrisisToggle = () => {
-    const nextCrisisState = !isCrisis;
-    setIsCrisis(nextCrisisState);
-    trackEvent('ai_crisis_mode_toggle', { active: nextCrisisState });
+  const generateWeeklyReflection = async () => {
+    if (moodLogs.length === 0) {
+      setMessages(prev => [...prev, { role: 'model', text: "I don't have enough mood logs yet to generate a reflection. Why not log how you're feeling first?" }]);
+      return;
+    }
+
+    setIsGeneratingReflection(true);
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/ai/reflection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moodLogs: moodLogs.slice(0, 10) })
+      });
+      const data = await res.json();
+      if (data.reflection) {
+        setMessages(prev => [...prev, { 
+          role: 'model', 
+          text: `📊 **Your Weekly Strength Reflection:**\n\n${data.reflection}\n\nKeep going, Spokane! You've logged ${moodLogs.length} times recently and every check-in counts toward your growth.`
+        }]);
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'model', text: "I couldn't generate your reflection right now, but I'm here to chat!" }]);
+    } finally {
+      setIsGeneratingReflection(false);
+      setIsLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (streak > 0 && (streak % 7 === 0)) {
+      setMessages(prev => {
+        const hasMilestoneMsg = prev.some(m => m.text.includes(`Milestone: ${streak} Day Streak!`));
+        if (hasMilestoneMsg) return prev;
+        return [...prev, { 
+          role: 'model', 
+          text: `🎉 **Milestone: ${streak} Day Streak!**\n\nYou are showing incredible consistency. Would you like a special Milestone Reflection based on your logs?`
+        }];
+      });
+    }
+  }, [streak]);
 
   useEffect(() => {
     if (messages.length > 3 || moodLogs.length > 0) {
@@ -40,13 +77,13 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
             body: JSON.stringify({ 
               moodLogs: moodLogs.slice(-5), 
               chatHistory: messages.slice(-5) 
+              // Enforcing server-side security - Gemini API key is server-side
             })
           });
           const data = await res.json();
           if (data.triggerVibeCheck) {
             setAnxietyDetected(true);
-            trackEvent('ai_vibe_check_triggered', { vibe: data.vibe });
-            setMessages(prev => [...prev, {
+            setMessages(prev => [...prev, { 
               role: 'model', 
               text: `⚠️ Vibe Check: ${data.recommendation}. Would you like to try a 1-minute grounding exercise?` 
             }]);
@@ -68,7 +105,6 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setIsLoading(true);
-    trackEvent('ai_chat_message_sent', { isCrisis });
 
     try {
       const res = await fetch('/api/gemini/chat', {
@@ -103,12 +139,23 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
             </p>
           </div>
         </div>
-        <button 
-          onClick={handleCrisisToggle}
-          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCrisis ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-        >
-          {isCrisis ? 'Deactivate Crisis Mode' : 'I am in Crisis'}
-        </button>
+        <div className="flex gap-2">
+          {!isCrisis && (
+            <button 
+              onClick={generateWeeklyReflection}
+              disabled={isLoading || moodLogs.length === 0}
+              className="px-4 py-2 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30"
+            >
+              Weekly Reflection
+            </button>
+          )}
+          <button 
+            onClick={() => setIsCrisis(!isCrisis)}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isCrisis ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+          >
+            {isCrisis ? 'Deactivate Crisis Mode' : 'I am in Crisis'}
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {isCrisis && messages.length === 1 && (

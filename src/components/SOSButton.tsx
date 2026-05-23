@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, Send, Phone, MessageCircle, X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Sponsor } from '../types';
-import { db, handleFirestoreError, OperationType, trackEvent } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, getDocs, query, where, limit } from 'firebase/firestore';
 
 interface SOSButtonProps {
@@ -19,10 +19,6 @@ export const SOSButton: React.FC<SOSButtonProps> = ({ userProfile, userId }) => 
   const triggerSOS = async () => {
     if (!userProfile) return;
     setLoading(true);
-    trackEvent('sos_triggered', {
-      neighborhood: userProfile.neighborhood,
-      hasEmergencyMentor: !!userProfile.emergencyMentorId
-    });
     try {
       const alertedUids: string[] = [];
 

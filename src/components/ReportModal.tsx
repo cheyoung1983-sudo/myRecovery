@@ -84,7 +84,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 </div>
                 <div>
                   <h2 className="text-xl font-black text-white italic uppercase tracking-tight">Report Safety Issue</h2>
-                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-none">Protecting Spokane Recovery</p>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-none">Protecting the myRecovery Community</p>
                 </div>
               </div>
               <button 
@@ -125,7 +125,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               <div className="bg-slate-800/30 p-4 rounded-2xl flex items-start gap-3 border border-slate-700/50">
                 <Flag size={16} className="text-rose-500 shrink-0 mt-0.5" />
                 <p className="text-[10px] text-slate-400 italic leading-relaxed">
-                  Reports are handled anonymously and reviewed by the Sober Spokane moderation team within 24 hours.
+                  Reports are handled anonymously and reviewed by the myRecovery moderation team within 24 hours.
                 </p>
               </div>
 

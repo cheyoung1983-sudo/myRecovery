@@ -22,8 +22,9 @@ import {
 import { 
   signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail
+  sendPasswordResetEmail, GoogleAuthProvider
 } from 'firebase/auth';
+import { setCachedToken, clearCachedToken, isCalendarConnected, connectGoogleCalendar } from './lib/googleCalendar';
 import { 
   doc, setDoc, onSnapshot, collection, query, where, orderBy, 
   serverTimestamp, updateDoc, addDoc, getDoc, getDocs, deleteDoc,
@@ -37,6 +38,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { MeetingReviews } from './components/MeetingReviews';
 import { MentorReviews } from './components/MentorReviews';
 import { ChatList } from './components/ChatList';
+import { WorkspaceIntegrations } from './components/WorkspaceIntegrations';
 import { AdBanner } from './components/AdBanner';
 import { NativeAd } from './components/NativeAd';
 import { ProfileOnboarding } from './components/ProfileOnboarding';
@@ -62,7 +64,7 @@ import { MeetingDetailModal } from './components/MeetingDetailModal';
 import { WarmHandshakeModal } from './components/WarmHandshakeModal';
 import { MeetingMap } from './components/MeetingMap';
 import { ChatView } from './components/ChatView';
-import { BetaFeedbackModal } from './components/BetaFeedbackModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -179,8 +181,6 @@ const INITIAL_SPONSORS: any[] = [
 
 // --- MAIN APPLICATION ---
 
-
-
 export default function App() {
   const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -196,6 +196,17 @@ export default function App() {
   const [sobrietyDate, setSobrietyDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('All');
+  const [profileCalendarConnected, setProfileCalendarConnected] = useState(isCalendarConnected());
+
+  useEffect(() => {
+    const handleCalendarChange = () => {
+      setProfileCalendarConnected(isCalendarConnected());
+    };
+    window.addEventListener('calendar-auth-changed', handleCalendarChange);
+    return () => {
+      window.removeEventListener('calendar-auth-changed', handleCalendarChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (userProfile?.neighborhood && selectedNeighborhood === 'All') {
@@ -248,6 +259,29 @@ export default function App() {
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [moodLogs, setMoodLogs] = useState<MoodEntry[]>([]);
+  
+  const streak = useMemo(() => {
+    if (moodLogs.length === 0) return 0;
+    const dates = new Set(moodLogs.map(log => {
+      const date = log.timestamp && typeof log.timestamp === 'object' && 'toDate' in log.timestamp 
+        ? (log.timestamp as any).toDate() 
+        : new Date(log.timestamp);
+      return date.toISOString().split('T')[0];
+    }));
+    
+    let currentStreak = 0;
+    let checkDate = new Date();
+    
+    if (!dates.has(checkDate.toISOString().split('T')[0])) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    while (dates.has(checkDate.toISOString().split('T')[0])) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+    return currentStreak;
+  }, [moodLogs]);
   const [isGroundingActive, setIsGroundingActive] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
@@ -257,7 +291,6 @@ export default function App() {
   const [resetSent, setResetSent] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [allUserProfiles, setAllUserProfiles] = useState<(UserProfile & { uid: string })[]>([]);
-  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   useEffect(() => {
     if (messaging) {
@@ -304,31 +337,38 @@ export default function App() {
       setCurrentUser(user);
       setIsAuthLoading(false);
       if (user) {
+        setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
         try {
-          const userDoc = await getDoc(userDocRef);
-          let profile: UserProfile;
-          if (!userDoc.exists()) {
-            profile = {
-              email: user.email || '',
-              name: user.displayName || 'Anonymous Player',
-              photoURL: user.photoURL || '',
-              sobrietyDate: new Date().toISOString().split('T')[0],
-              recoveryNeeds: [],
-              role: 'user'
-            };
-            await setDoc(userDocRef, profile);
-          } else {
-            profile = userDoc.data() as UserProfile;
-          }
-          setUserProfile(profile);
-          setIsSuperAdmin(profile.role === 'admin');
+          // Use onSnapshot for real-time profile updates
+          const unsubProfile = onSnapshot(userDocRef, (doc) => {
+            if (doc.exists()) {
+              const data = doc.data() as UserProfile;
+              setUserProfile(data);
+              setUserNeeds(data.recoveryNeeds || []);
+              if (data.sobrietyDate) setSobrietyDate(data.sobrietyDate);
+              if (data.neighborhood) setSelectedNeighborhood(data.neighborhood);
+            } else {
+              const profile: UserProfile = {
+                email: user.email || '',
+                name: user.displayName || 'Anonymous Player',
+                photoURL: user.photoURL || '',
+                sobrietyDate: new Date().toISOString().split('T')[0],
+                recoveryNeeds: [],
+                role: 'user'
+              };
+              setDoc(userDocRef, profile);
+              setUserProfile(profile);
+            }
+          });
+          return () => unsubProfile();
         } catch (e) {
           handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
         }
       } else {
         setUserProfile(null);
         setIsSuperAdmin(false);
+        setUserNeeds([]);
       }
     });
     return unsubscribe;
@@ -395,7 +435,11 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential && credential.accessToken) {
+        setCachedToken(credential.accessToken);
+      }
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'auth');
     }
@@ -434,7 +478,10 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => {
+    clearCachedToken();
+    signOut(auth);
+  };
 
   const handleResendVerification = async () => {
     if (currentUser) {
@@ -589,13 +636,7 @@ export default function App() {
       await updateDoc(doc(db, 'users', targetUid), {
         role: newRole
       });
-      // Sync Custom Claims via Backend
-      await fetch('/api/admin/sync-role', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: targetUid, role: newRole })
-      });
-      triggerSystemNotification('Success', `User role and security claims updated to ${newRole}`);
+      triggerSystemNotification('Success', `User role updated to ${newRole}`);
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `users/${targetUid}`);
     }
@@ -728,21 +769,34 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          userNeeds: userProfile.recoveryNeeds, 
-          mentors: sponsors.map(s => ({ id: s.id, name: s.name, bio: s.bio, specialties: s.specialties }))
+          userContext: {
+            needs: userProfile.recoveryNeeds,
+            daysSober: daysSober,
+            neighborhood: userProfile.neighborhood || 'Any'
+          },
+          mentors: sponsors
+            .filter(s => s.status === 'verified')
+            .map(s => ({ 
+              id: s.id, 
+              name: s.name, 
+              bio: s.bio, 
+              specialties: s.specialties,
+              years: s.years,
+              neighborhood: s.neighborhood
+            }))
         })
       });
       if (!response.ok) throw new Error('Match failed');
       const data = await response.json();
       
-      const matchText = data.match;
-      const matchedSponsor = sponsors.find(s => matchText.includes(s.id) || matchText.includes(s.name));
+      const { mentorId, reason } = data;
+      const matchedSponsor = sponsors.find(s => s.id === mentorId);
       
       if (matchedSponsor) {
         setReachingOutTo(matchedSponsor);
         showToast(`AI Recommends: ${matchedSponsor.name}`, "success");
       } else {
-        triggerSystemNotification("AI Recommendation", matchText);
+        triggerSystemNotification("Mentor Suggestion", reason || "No perfect match found, but here are some options.");
       }
     } catch (e) {
       showToast("Could not complete matching", "alert");
@@ -801,19 +855,36 @@ export default function App() {
   };
 
   const topMatches = useMemo(() => {
-    if (userNeeds.length === 0) return [];
+    const needs = userProfile?.recoveryNeeds || userNeeds;
+    if (needs.length === 0) return [];
+    
     return sponsors
       .filter(s => s.status === 'verified')
       .map(s => {
         let score = 0;
-        userNeeds.forEach(need => { if (s.specialties.includes(need)) score += 2; });
-        if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) score += 3;
+        // Specialty Match (Primary)
+        needs.forEach(need => { 
+          if (s.specialties.some(spec => spec.toLowerCase().includes(need.toLowerCase()) || need.toLowerCase().includes(spec.toLowerCase()))) {
+            score += 4; 
+          }
+        });
+        
+        // Neighborhood Proximity
+        if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) {
+          score += 5;
+        }
+
+        // Experience Bonus
+        if (s.years >= 10) score += 3;
+        else if (s.years >= 5) score += 2;
+        else if (s.years >= 2) score += 1;
+
         return { sponsor: s, score };
       })
-      .filter(m => m.score > 0)
+      .filter(m => m.score > 2)
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
-  }, [sponsors, userNeeds, userProfile?.neighborhood]);
+  }, [sponsors, userNeeds, userProfile]);
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter(m => {
@@ -835,12 +906,20 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-[#0f172a]/80 backdrop-blur-xl border-b border-slate-800/50 px-6 py-5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/40">
-                <ShieldCheck size={24} className="text-white" />
+             <div className="relative">
+                <div className="p-2 bg-gradient-to-br from-blue-600 to-emerald-600 rounded-xl shadow-lg shadow-blue-900/40 relative z-10">
+                   <Heart size={24} className="text-white fill-white/20" />
+                </div>
+                <div className="absolute -top-1 -right-1 p-1 bg-emerald-500 rounded-lg shadow-lg z-20">
+                   <Sparkles size={8} className="text-white" />
+                </div>
              </div>
              <div>
-                <h1 className="text-xl font-black text-white italic tracking-tighter uppercase">Sober Spokane</h1>
-                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-[0.3em]">Community Support Network</p>
+                <div className="flex items-baseline gap-0.5 leading-none">
+                   <h1 className="text-xl font-black text-white tracking-tighter">my</h1>
+                   <h1 className="text-xl font-black text-blue-500 tracking-tighter uppercase italic">Recovery</h1>
+                </div>
+                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-[0.3em]">Spokane Support Network</p>
              </div>
           </div>
           
@@ -913,7 +992,9 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredMeetings.map(m => (
-                    <MeetingCard key={m.id} meeting={m} onSelect={setSelectedMeeting} />
+                    <ErrorBoundary key={m.id}>
+                      <MeetingCard meeting={m} onSelect={setSelectedMeeting} />
+                    </ErrorBoundary>
                   ))}
                 </div>
                 {filteredMeetings.length === 0 && (
@@ -929,17 +1010,20 @@ export default function App() {
 
           {tab === 'hub' && (
             <motion.div key="hub" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
-              <RecoveryHub 
-                daysSober={daysSober} 
-                moodLogs={moodLogs} 
-                onLogMood={handleLogMood}
-                userProfile={userProfile}
-                topMatches={topMatches}
-                onSponsorClick={(s) => { setReachingOutTo(s); setTab('sponsors'); }}
-                currentUser={currentUser}
-                tab={tab}
-                handleAIMentorMatch={handleAIMentorMatch}
-              />
+              <ErrorBoundary>
+                <RecoveryHub 
+                  daysSober={daysSober} 
+                  moodLogs={moodLogs} 
+                  streak={streak}
+                  onLogMood={handleLogMood}
+                  userProfile={userProfile}
+                  topMatches={topMatches}
+                  onSponsorClick={(s) => { setReachingOutTo(s); setTab('sponsors'); }}
+                  currentUser={currentUser}
+                  tab={tab}
+                  handleAIMentorMatch={handleAIMentorMatch}
+                />
+              </ErrorBoundary>
             </motion.div>
           )}
 
@@ -976,11 +1060,17 @@ export default function App() {
             </motion.div>
           )}
 
-          {tab === 'ai' && <AISupportView currentUser={currentUser} moodLogs={moodLogs} />}
+          {tab === 'ai' && (
+            <ErrorBoundary>
+              <AISupportView currentUser={currentUser} moodLogs={moodLogs} streak={streak} />
+            </ErrorBoundary>
+          )}
 
           {tab === 'literature' && (
             <motion.div key="literature" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
-               <LiteratureSearch />
+               <ErrorBoundary>
+                 <LiteratureSearch currentUser={currentUser} />
+               </ErrorBoundary>
             </motion.div>
           )}
 
@@ -992,23 +1082,33 @@ export default function App() {
               exit={{ opacity: 0, x: -20 }}
               className="px-6 pb-32"
             >
-              <SpokaneResources />
+              <ErrorBoundary>
+                <SpokaneResources />
+              </ErrorBoundary>
             </motion.div>
           )}
 
           {tab === 'chat' && (
-            <>
+            <ErrorBoundary>
               {activeChatId && activeChat ? (
                 <ChatView session={activeChat} messages={messages} currentUser={currentUser} onBack={() => setActiveChatId(null)} onSendMessage={handleSendMessage} onTyping={handleUpdateTyping} />
               ) : (
                 <ChatList chats={chatSessions.map(c => ({ ...c, sponsor: sponsors.find(s => s.id === c.sponsorId) }))} onSelectChat={(id) => setActiveChatId(id)} currentUserId={currentUser?.uid} />
               )}
-            </>
+            </ErrorBoundary>
           )}
 
-          {tab === 'apply' && <SponsorApplicationForm onSubmit={handleApplySponsor} onCancel={() => setTab('sponsors')} />}
+          {tab === 'apply' && (
+            <ErrorBoundary>
+              <SponsorApplicationForm onSubmit={handleApplySponsor} onCancel={() => setTab('sponsors')} />
+            </ErrorBoundary>
+          )}
 
-          {tab === 'admin' && <AdminDashboard pendingSponsors={sponsors.filter(s => s.status === 'pending')} onApprove={handleVerifySponsor} onReject={handleRejectSponsor} allSponsors={sponsors} allUserProfiles={allUserProfiles} onUpdateRole={handleUpdateUserRole} />}
+          {tab === 'admin' && (
+            <ErrorBoundary>
+              <AdminDashboard pendingSponsors={sponsors.filter(s => s.status === 'pending')} onApprove={handleVerifySponsor} onReject={handleRejectSponsor} allSponsors={sponsors} allUserProfiles={allUserProfiles} onUpdateRole={handleUpdateUserRole} />
+            </ErrorBoundary>
+          )}
 
           {tab === 'profile' && (
             <motion.div key="profile" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: -20 }} className="space-y-10">
@@ -1057,7 +1157,7 @@ export default function App() {
                           <LogIn size={18} /> Continue with Google
                         </button>
                         <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
-                          {authMode === 'login' ? 'New to Spokane Recovery? Sign Up' : 'Already have an account? Sign In'}
+                          {authMode === 'login' ? 'New to myRecovery? Sign Up' : 'Already have an account? Sign In'}
                         </button>
                       </form>
                     </>
@@ -1125,6 +1225,9 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Google Workspace Section */}
+                  <WorkspaceIntegrations daysSober={daysSober} userName={userProfile?.name || 'Friend'} />
+
                   <div className="space-y-4">
                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Calendar size={14} /> My Meeting History ({attendance.length})</h3>
                     <div className="bg-slate-900 border border-slate-800 rounded-[2rem] overflow-hidden divide-y divide-slate-800">
@@ -1141,13 +1244,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-8 border-t border-slate-800 space-y-4">
-                    <button
-                      onClick={() => setIsFeedbackModalOpen(true)}
-                      className="w-full py-5 bg-blue-600/10 text-blue-500 border border-blue-500/20 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-xl"
-                    >
-                      Give Beta Feedback
-                    </button>
+                  <div className="pt-8 border-t border-slate-800">
                     <button onClick={handleLogout} className="w-full py-5 bg-rose-600/10 text-rose-500 border border-rose-500/20 rounded-2xl font-black uppercase tracking-widest hover:bg-rose-600 hover:text-white transition-all shadow-xl shadow-rose-950/20">Sign Out</button>
                   </div>
                 </div>
@@ -1207,24 +1304,6 @@ export default function App() {
         )}
         {reachingOutTo && (
           <WarmHandshakeModal sponsor={reachingOutTo} onClose={() => setReachingOutTo(null)} onStartChat={(text) => handleStartChat(reachingOutTo, text)} />
-        )}
-        {currentUser && (
-          <BetaFeedbackModal
-            isOpen={isFeedbackModalOpen}
-            onClose={() => setIsFeedbackModalOpen(false)}
-            userId={currentUser.uid}
-            userName={userProfile?.name || 'User'}
-          />
-        )}
-        {currentUser && userProfile && incompleteProfile && (
-          <ProfileOnboarding
-            user={currentUser}
-            profile={userProfile}
-            onComplete={async () => {
-              const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-              setUserProfile(userDoc.data() as UserProfile);
-            }}
-          />
         )}
       </AnimatePresence>
 

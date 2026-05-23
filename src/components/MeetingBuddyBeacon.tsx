@@ -33,28 +33,34 @@ export const MeetingBuddyBeacon: React.FC<MeetingBuddyBeaconProps> = ({ meetingI
     return () => unsubscribe();
   }, [meetingId, userId]);
 
-  const toggleStatus = async () => {
-    if (myStatus) {
-      // If already waiting, remove
+  const toggleStatus = async (status: 'waiting' | 'on_my_way') => {
+    if (myStatus && myStatus.status === status) {
+      // If same status, remove
       await deleteDoc(doc(db, 'meetingBuddies', myStatus.id));
+    } else if (myStatus) {
+      // Switch status
+      await updateDoc(doc(db, 'meetingBuddies', myStatus.id), { status });
     } else {
-      // Join waitlist
+      // Join waitlist or signal arrival
       await addDoc(collection(db, 'meetingBuddies'), {
         meetingId,
         userId,
         userName: user?.name || 'Someone',
         userAlias: user?.alias || '',
         arrivalTime: serverTimestamp(),
-        status: 'waiting'
+        status
       });
     }
   };
+
+  const waitingCount = buddies.filter(b => b.status === 'waiting').length;
+  const omwCount = buddies.filter(b => b.status === 'on_my_way').length;
 
   return (
     <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
           <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Meeting Buddy Beacon</h4>
         </div>
         <div className="flex -space-x-2">
@@ -71,31 +77,38 @@ export const MeetingBuddyBeacon: React.FC<MeetingBuddyBeaconProps> = ({ meetingI
         </div>
       </div>
 
-      <div className="space-y-3">
-        {buddies.length === 0 ? (
-          <p className="text-xs text-slate-400 font-medium italic">Nobody is waiting yet. Be the first to signal you are here!</p>
-        ) : (
-          <p className="text-xs text-white font-bold">
-            <span className="text-emerald-500">{buddies.length} person</span> {buddies.length === 1 ? 'is' : 'are'} waiting at the door.
-          </p>
-        )}
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="text-center p-3 bg-slate-900/50 rounded-2xl border border-slate-800">
+             <p className="text-xl font-black text-white">{omwCount}</p>
+             <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">On Their Way</p>
+          </div>
+          <div className="text-center p-3 bg-slate-900/50 rounded-2xl border border-slate-800">
+             <p className="text-xl font-black text-emerald-500">{waitingCount}</p>
+             <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">At The Door</p>
+          </div>
+        </div>
 
-        <button
-          onClick={toggleStatus}
-          className={`w-full py-4 rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all ${myStatus ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-800 text-slate-300 hover:bg-white hover:text-slate-950 shadow-xl'}`}
-        >
-          {myStatus ? (
-            <>
-              <CheckCircle2 size={16} /> I'm Waiting at the Door
-            </>
-          ) : (
-            <>
-              <LogIn size={16} /> I'm Arriving Alone
-            </>
-          )}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => toggleStatus('on_my_way')}
+            className={`w-full py-3.5 rounded-xl flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest transition-all ${myStatus?.status === 'on_my_way' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+          >
+            {myStatus?.status === 'on_my_way' ? <CheckCircle2 size={14} /> : <Users size={14} />} 
+            I'm On My Way
+          </button>
+          
+          <button
+            onClick={() => toggleStatus('waiting')}
+            className={`w-full py-3.5 rounded-xl flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest transition-all ${myStatus?.status === 'waiting' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-800 text-slate-300 hover:bg-white hover:text-slate-950'}`}
+          >
+            {myStatus?.status === 'waiting' ? <CheckCircle2 size={14} /> : <LogIn size={14} />} 
+            I'm Waiting at the Door
+          </button>
+        </div>
+
         <p className="text-[9px] text-slate-600 font-bold uppercase text-center tracking-tighter">
-          {myStatus ? 'Others can see you are waiting for a buddy.' : 'Tap to let others know you’d like a buddy at the door.'}
+          Beacons are active for the duration of the meeting.
         </p>
       </div>
     </div>

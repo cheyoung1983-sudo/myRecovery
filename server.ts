@@ -1,130 +1,40 @@
 import express from "express";
 import path from "path";
-import cors from "cors";
-import helmet from "helmet";
-import { rateLimit } from "express-rate-limit";
-import * as dotenv from "dotenv";
-import * as Sentry from "@sentry/node";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import admin from "firebase-admin";
-
-// Load environment variables for local development
-dotenv.config();
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.NODE_ENV || "development",
-  tracesSampleRate: 1.0,
-});
 
 // Load Spokane resources to provide context to Gemini
 import { SPOKANE_RESOURCES } from "./src/constants";
 
-// Initialize Firebase Admin
-try {
-  admin.initializeApp();
-} catch (e) {
-  console.warn("Firebase Admin failed to initialize. Custom Claims and real SOS will be disabled.");
-  Sentry.captureException(e);
-}
-
 async function startServer() {
   const app = express();
-
-  // Sentry request handler must be the first middleware on the app
-  Sentry.setupExpressErrorHandler(app);
-
   const PORT = Number(process.env.PORT) || 3000;
-
-  // Security Middleware
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        "img-src": ["'self'", "data:", "https:", "http:"],
-        "script-src": ["'self'", "'unsafe-inline'", "https://securepubads.g.doubleclick.net", "https://pagead2.googlesyndication.com", "https://browser.sentry-cdn.com"],
-        "connect-src": ["'self'", "https://*.googleapis.com", "https://*.firebaseio.com", "https://*.google-analytics.com", "https://*.sentry.io"]
-      }
-    }
-  }));
-
-  app.use(cors({
-    origin: process.env.NODE_ENV === "production"
-      ? [/\.web\.app$/, /\.firebaseapp\.com$/] // Restrict to Firebase Hosting domains
-      : true
-  }));
 
   app.use(express.json());
 
-  // Rate Limiting
-  const aiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 50, // Limit each IP to 50 AI requests per window
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    message: { error: "Too many AI requests. Please take a breather." }
+  const ai = new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
   });
-
-  const adminLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    limit: 10, // Very strict for admin sync
-    message: { error: "Admin rate limit exceeded." }
-  });
-
-  const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY || "");
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-  const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
-
-  async function getVectorForText(text: string) {
-    const result = await embeddingModel.embedContent(text);
-    return result.embedding.values;
-  }
-
-  // Apply rate limiters to specific routes
-  app.use("/api/ai/", aiLimiter);
-  app.use("/api/gemini/", aiLimiter);
-  app.use("/api/admin/", adminLimiter);
 
   // API Routes
   app.post("/api/gemini/chat", async (req, res) => {
     try {
       const { prompt, history = [], isCrisis = false } = req.body;
       
-      // Fetch dynamic resources from Firestore
-      let resourceSource = SPOKANE_RESOURCES;
-      try {
-        const resourcesSnap = await admin.firestore().collection('spokaneResources').get();
-        const dynamicResources = resourcesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-        if (dynamicResources.length > 0) resourceSource = dynamicResources;
-      } catch (e) {
-        console.warn("Could not fetch resources from Firestore, falling back to static list.");
-      }
-
-      // PRODUCTION RAG: Semantic Search
-      // In a full production environment, we would use getVectorForText(prompt)
-      // and query Firestore like:
-      // db.collection('spokaneResources').findNearest('embedding', vector, { limit: 3, distanceMeasure: 'cosine' })
-
-      // For now, we continue with our lightweight LLM-based filter which mimics the
-      // behavior of a vector search by picking the most relevant context.
-      const resourcePicker = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: `User Query: "${prompt}"\n\nFrom this list of Spokane resources, return ONLY the IDs of the 3 most relevant ones as a comma-separated list:\n${resourceSource.map((r: any) => `ID ${r.id}: ${r.name} - ${r.description}`).join('\n')}` }] }],
-        config: { temperature: 0.1 }
-      });
-
-      const relevantIds = resourcePicker.response.text().split(',').map(id => id.trim());
-      const filteredResources = resourceSource.filter((r: any) => relevantIds.some(id => id.includes(r.id)));
-
-      const resourcesContext = filteredResources.length > 0
-        ? filteredResources.map((r: any) => `- ${r.name} (${r.category}): ${r.description}. Phone: ${r.phone}`).join("\n")
-        : "No specific local resources identified for this query.";
+      const resourcesContext = SPOKANE_RESOURCES.map(r => 
+        `- ${r.name} (${r.category}): ${r.description}. Phone: ${r.phone}`
+      ).join("\n");
 
       const systemInstruction = `
         You are "Sober Spokane Assistant", a compassionate peer-support AI for recovery.
         ${isCrisis ? "The user has indicated they are in a CRISIS or high-risk state. Prioritize immediate safety, grounding techniques, and 988/emergency contacts." : "Your tone is non-judgmental, encouraging, and informative."}
         
-        Available Local Resources (Relevant to current context):
+        Available Local Resources:
         ${resourcesContext}
         
         Guidelines:
@@ -135,51 +45,25 @@ async function startServer() {
         5. Concise markdown responses.
       `;
 
-      const chat = model.startChat({
-        history: [
-          { role: 'user', parts: [{ text: systemInstruction }] },
-          { role: 'model', parts: [{ text: "Understood. I am Sober Spokane Assistant, ready to help with local resources and peer support." }] },
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
           ...history.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'model',
             parts: [{ text: m.text }]
-          }))
-        ]
+          })),
+          { role: 'user', parts: [{ text: prompt }] }
+        ],
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        },
       });
 
-      const response = await chat.sendMessage(prompt);
-      res.json({ text: response.response.text() });
+      res.json({ text: response.text });
     } catch (error: any) {
-      Sentry.captureException(error);
       console.error("Gemini Error:", error);
       res.status(500).json({ error: error.message || "Failed to generate AI response" });
-    }
-  });
-
-  // Admin: Set Custom Claims for roles (Production Security Recommendation)
-  app.post("/api/admin/sync-role", async (req, res) => {
-    try {
-      const { uid, role } = req.body;
-      await admin.auth().setCustomUserClaims(uid, { role });
-      res.json({ success: true, message: `Custom claim '${role}' set for user ${uid}` });
-    } catch (error: any) {
-      res.status(500).json({ error: "Failed to set custom claims. Ensure Admin SDK is configured." });
-    }
-  });
-
-  // Admin: Utility to generate embeddings for all resources (Vector Search Prep)
-  app.post("/api/admin/index-resources", async (req, res) => {
-    try {
-      const indexedResources = await Promise.all(SPOKANE_RESOURCES.map(async (r) => {
-        const vector = await getVectorForText(`${r.name} ${r.description} ${r.category}`);
-        return { ...r, embedding: vector };
-      }));
-
-      // In production, you would write these to Firestore:
-      // indexedResources.forEach(r => db.collection('spokaneResources').doc(r.id).set(r));
-
-      res.json({ success: true, count: indexedResources.length, message: "Embeddings generated for all resources." });
-    } catch (e) {
-      res.status(500).json({ error: "Indexing failed" });
     }
   });
 
@@ -188,37 +72,64 @@ async function startServer() {
       const { moodLogs } = req.body;
       const logsSummary = moodLogs.map((l: any) => `- ${new Date(l.timestamp).toLocaleDateString()}: ${l.mood} (${l.note || 'No note'})`).join("\n");
 
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: `Analyze these recent recovery mood logs and provide a 2-3 sentence optimistic, strength-based reflection or summary of their progress. Focus on patterns of resilience.\n\nLogs:\n${logsSummary}` }] }],
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Analyze these recent recovery mood logs and provide a 2-3 sentence optimistic, strength-based reflection or summary of their progress. Focus on patterns of resilience.\n\nLogs:\n${logsSummary}`,
         config: {
           systemInstruction: "You are a recovery coach focused on positive reinforcement and identifying strength patterns.",
           temperature: 0.6,
         }
       });
 
-      res.json({ reflection: response.response.text() });
+      res.json({ reflection: response.text });
     } catch (error: any) {
-      Sentry.captureException(error);
       res.status(500).json({ error: "Failed to generate reflection" });
     }
   });
 
   app.post("/api/ai/match", async (req, res) => {
     try {
-      const { userNeeds, mentors } = req.body;
-      const mentorsContext = mentors.map((m: any) => `ID ${m.id}: ${m.name}, Bio: ${m.bio}, Specialties: ${m.specialties?.join(', ')}`).join("\n");
+      const { userContext, mentors } = req.body;
+      const mentorsContext = mentors.map((m: any) => 
+        `ID: ${m.id} | Name: ${m.name} | Experience: ${m.years} yrs | Loc: ${m.neighborhood} | Bio: ${m.bio} | Specialties: ${m.specialties?.join(', ')}`
+      ).join("\n");
 
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: `Based on these user needs: "${userNeeds.join(', ')}", which of these mentors is the best match? Return the ID and a brief 1-sentence reason why.\n\nMentors:\n${mentorsContext}` }] }],
+      const prompt = `
+        User Profile:
+        - Needs: ${userContext.needs.join(', ')}
+        - Recovery Duration: ${userContext.daysSober} days
+        - Preferred Location: ${userContext.neighborhood}
+
+        Available Mentors:
+        ${mentorsContext}
+
+        Task: Find the single best mentor match for this user.
+        Consider:
+        1. Specialty alignment (primary factor)
+        2. Experience (mentors with more years are often better for complex needs)
+        3. Proximity (same neighborhood is a plus for in-person support)
+
+        Return ONLY a JSON object:
+        {
+          "mentorId": "string",
+          "reason": "1-2 sentence compelling reason why this is a good match",
+          "strength": "high" | "medium" | "low"
+        }
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
         config: {
-          systemInstruction: "You are an expert matching coordinator for a recovery program.",
-          temperature: 0.4,
+          systemInstruction: "You are a professional recovery matching algorithm. You provide highly accurate, compassionate matches in strict JSON format.",
+          temperature: 0.2,
         }
       });
 
-      res.json({ match: response.response.text() });
+      const text = response.text.replace(/```json|```/g, '').trim();
+      res.json(JSON.parse(text));
     } catch (error: any) {
-      Sentry.captureException(error);
+      console.error("Match API Error:", error);
       res.status(500).json({ error: "Failed to match mentors" });
     }
   });
@@ -229,20 +140,14 @@ async function startServer() {
       const prompt = `Analyze this mood history: ${JSON.stringify(moodLogs)}. 
       And recent chat: ${JSON.stringify(chatHistory)}.
       Is there a downward trend or signs of high anxiety? 
-      Return ONLY a JSON object: { "vibe": "stable"|"anxious"|"declining", "recommendation": "string", "triggerVibeCheck": boolean }`;
+      Return a JSON object: { "vibe": "stable"|"anxious"|"declining", "recommendation": "string", "triggerVibeCheck": boolean }`;
       
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: {
-          temperature: 0.1,
-          responseMimeType: "application/json"
-        }
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
       });
-
-      res.json(JSON.parse(result.response.text() || "{}"));
+      res.json(JSON.parse(result.text.replace(/```json|```/g, '')));
     } catch (e) {
-      Sentry.captureException(e);
-      console.error("Analysis failed:", e);
       res.status(500).json({ error: "Analysis failed" });
     }
   });
@@ -262,15 +167,16 @@ async function startServer() {
         5. Use Markdown for formatting.
       `;
 
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: `User Query: "${query}"\n\nFind relevant 12-step literature to help with this concern.` }] }],
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `User Query: "${query}"\n\nFind relevant 12-step literature to help with this concern.`,
         config: {
           systemInstruction,
           temperature: 0.5,
         }
       });
 
-      res.json({ text: response.response.text() });
+      res.json({ text: response.text });
     } catch (error: any) {
       console.error("Literature Search Error:", error);
       res.status(500).json({ error: "Failed to search literature" });
@@ -294,7 +200,6 @@ async function startServer() {
         notifiedCount: targetUids.length 
       });
     } catch (error: any) {
-      Sentry.captureException(error);
       console.error("SOS Alert Error:", error);
       res.status(500).json({ error: "Failed to broadcast SOS alert" });
     }

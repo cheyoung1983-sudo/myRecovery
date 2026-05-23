@@ -1,12 +1,22 @@
 
-import React, { useMemo } from 'react';
-import { X, Bell, BellOff, Clock, MapPin, Bus, Info, ShieldCheck, Check, Calendar, Heart, BadgeCheck, ChevronRight, Accessibility } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { X, Bell, BellOff, Clock, MapPin, Bus, Info, ShieldCheck, Check, Calendar, Heart, BadgeCheck, ChevronRight, Accessibility, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Meeting, Sponsor, AttendanceRecord, UserProfile } from '../types';
 import { TransitArrivals } from './TransitArrivals';
 import { MeetingMap } from './MeetingMap';
 import { MeetingBuddyBeacon } from './MeetingBuddyBeacon';
 import { MeetingReviews } from './MeetingReviews';
+import { ErrorBoundary } from './ErrorBoundary';
+import { 
+  isCalendarConnected, 
+  connectGoogleCalendar, 
+  getNextOccurrence, 
+  checkTimeConflict, 
+  addMeetingToCalendar,
+  getCachedToken,
+  clearCachedToken
+} from '../lib/googleCalendar';
 
 interface MeetingDetailModalProps {
   meeting: Meeting;
@@ -33,6 +43,76 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
   userProfile, 
   userId 
 }) => {
+  const [calendarConnected, setCalendarConnected] = useState(isCalendarConnected());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isCheckingConflict, setIsCheckingConflict] = useState(false);
+  const [conflictEvent, setConflictEvent] = useState<any | null>(null);
+  const [isAdded, setIsAdded] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const nextOccur = useMemo(() => {
+    return getNextOccurrence(meeting.day, meeting.time);
+  }, [meeting.day, meeting.time]);
+
+  const runConflictCheck = async (token: string) => {
+    setIsCheckingConflict(true);
+    setErrorMsg('');
+    try {
+      const conflict = await checkTimeConflict(token, nextOccur.start, nextOccur.end);
+      setConflictEvent(conflict);
+    } catch (e: any) {
+      console.error(e);
+      if (e.message?.includes('expired') || e.message?.includes('connection')) {
+        setCalendarConnected(false);
+      }
+    } finally {
+      setIsCheckingConflict(false);
+    }
+  };
+
+  useEffect(() => {
+    const token = getCachedToken();
+    if (token) {
+      setCalendarConnected(true);
+      runConflictCheck(token);
+    } else {
+      setCalendarConnected(false);
+    }
+  }, [nextOccur]);
+
+  const handleConnectCalendar = async () => {
+    setIsSyncing(true);
+    setErrorMsg('');
+    try {
+      const token = await connectGoogleCalendar();
+      setCalendarConnected(true);
+      await runConflictCheck(token);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Failed to connect Google Calendar');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleAddToCalendar = async () => {
+    const token = getCachedToken();
+    if (!token) {
+      setCalendarConnected(false);
+      setErrorMsg('Google connection expired. Please reconnect.');
+      return;
+    }
+    setIsSyncing(true);
+    setErrorMsg('');
+    try {
+      await addMeetingToCalendar(token, meeting, nextOccur.start, nextOccur.end);
+      setIsAdded(true);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Failed to add event to Google Calendar');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const transitLink = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${meeting.address}, Spokane, WA`)}&travelmode=transit`;
 
   const homeGroupSponsors = useMemo(() => {
@@ -133,9 +213,20 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
               <MapPin size={14} /> Location Details
             </h4>
             
-            <MeetingMap lat={meeting.lat} lng={meeting.lng} name={meeting.name} />
+            <ErrorBoundary 
+              fallback={
+                <div className="w-full h-48 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col items-center justify-center p-6 text-center space-y-2">
+                   <MapPin size={32} className="text-slate-700" />
+                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">Map currently unavailable<br/>{meeting.address}</p>
+                </div>
+              }
+            >
+              <MeetingMap lat={meeting.lat} lng={meeting.lng} name={meeting.name} />
+            </ErrorBoundary>
 
-            <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
+            <ErrorBoundary>
+              <TransitArrivals neighborhood={meeting.neighborhood} meetingName={meeting.name} />
+            </ErrorBoundary>
 
             <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-3xl shadow-inner">
               <p className="text-lg text-slate-100 font-bold mb-1">{meeting.address}</p>
@@ -181,6 +272,124 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
               <><Calendar size={24} /> Log My Attendance</>
             )}
           </button>
+
+          {/* Google Calendar Sync Section */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-blue-500/10 rounded-lg text-blue-500">
+                  <Calendar size={16} />
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">Google Calendar Sync</h4>
+                  <p className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Keep recovery on your schedule</p>
+                </div>
+              </div>
+              <div>
+                {calendarConnected ? (
+                  <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-[8px] font-black uppercase text-emerald-400 rounded-full tracking-wider">
+                    Connected
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-slate-800 border border-slate-700 text-[8px] font-black uppercase text-slate-500 rounded-full tracking-wider">
+                    Disconnected
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-1">
+              {!calendarConnected ? (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-400 leading-relaxed font-semibold">
+                    Connect your Google Calendar to seamlessly copy recovery events, set automatic reminders, and check for scheduling conflicts.
+                  </p>
+                  <button
+                    onClick={handleConnectCalendar}
+                    disabled={isSyncing}
+                    className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    {isSyncing ? (
+                      <span className="animate-spin inline-block w-4 h-4 border-2 border-slate-500 border-t-white rounded-full" />
+                    ) : (
+                      <>
+                        <Calendar size={16} className="text-blue-500" />
+                        Connect Google Calendar
+                      </>
+                    )}
+                  </button>
+                  {errorMsg && (
+                    <p className="text-[10px] text-rose-500 font-bold uppercase tracking-tight text-center">
+                      Error: {errorMsg}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-950/40 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                      <span>Next Sync Target</span>
+                      <span className="text-blue-500">Weekly occurrence</span>
+                    </div>
+                    <div className="text-white text-sm font-bold">
+                      {nextOccur.start.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} at{' '}
+                      {nextOccur.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+
+                    {isCheckingConflict ? (
+                      <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest animate-pulse">
+                        <span className="animate-spin inline-block w-3.5 h-3.5 border border-slate-500 border-t-blue-500 rounded-full" />
+                        Checking calendar conflicts...
+                      </div>
+                    ) : conflictEvent ? (
+                      <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl text-amber-500">
+                        <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                        <div className="text-[10px] uppercase font-bold tracking-tight">
+                          <span className="font-black">Conflict Warning:</span> You have "{conflictEvent.summary || 'an event'}" scheduled at this time.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 text-emerald-500 text-[10px] uppercase font-bold tracking-tight">
+                        <Check size={14} className="bg-emerald-500/10 border border-emerald-500/20 rounded-full p-0.5 text-emerald-500" />
+                        <span>Your schedule is free for this meeting!</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {isAdded ? (
+                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col items-center text-center space-y-1">
+                      <Check size={28} className="text-emerald-500 bg-emerald-500/10 rounded-full p-1.5 border border-emerald-500/30" />
+                      <p className="text-xs text-white font-black uppercase tracking-widest pt-1">Event Synced Successfully</p>
+                      <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                        Added to primary calendar with 30 & 60-minute pre-meeting alert notifications.
+                      </p>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleAddToCalendar}
+                      disabled={isSyncing}
+                      className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl flex items-center justify-center gap-2 font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-blue-900/40 active:scale-[0.98] cursor-pointer"
+                    >
+                      {isSyncing ? (
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-blue-200 border-t-white rounded-full" />
+                      ) : (
+                        <>
+                          <Calendar size={16} />
+                          {conflictEvent ? 'Sync Event Anyway' : 'Add to Google Calendar'}
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {errorMsg && (
+                    <p className="text-[10px] text-rose-500 font-bold uppercase tracking-tight text-center">
+                      Error: {errorMsg}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           <MeetingBuddyBeacon 
             meetingId={meeting.id} 
@@ -259,7 +468,7 @@ export const MeetingDetailModal: React.FC<MeetingDetailModalProps> = ({
 
           <div className="pb-8 text-center pt-10">
             <p className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.3em]">
-              Spokane Recovery Network • Community Feedback
+              myRecovery Network • Community Feedback
             </p>
           </div>
         </div>

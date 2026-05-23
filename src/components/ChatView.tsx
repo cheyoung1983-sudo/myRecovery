@@ -6,7 +6,8 @@ import {
   MessageCircle, 
   Send 
 } from 'lucide-react';
-import { FirebaseUser, ChatSession, Message } from '../types';
+import { ChatSession, Message } from '../types';
+import { User as FirebaseUser } from 'firebase/auth';
 
 export const ChatView = ({ session, messages, currentUser, onBack, onSendMessage, onTyping }: { 
   session: ChatSession, 
