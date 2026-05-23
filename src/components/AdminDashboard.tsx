@@ -45,6 +45,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     ];
   }, [allSponsors]);
 
+  const roleStats = useMemo(() => {
+    let adminCount = 0;
+    let mentorCount = 0;
+    let userCount = 0;
+
+    allUserProfiles.forEach(u => {
+      if (u.role === 'admin') adminCount++;
+      else if (u.role === 'mentor') mentorCount++;
+      else userCount++;
+    });
+
+    return [
+      { name: 'User', value: userCount, color: '#3b82f6' },
+      { name: 'Mentor', value: mentorCount, color: '#10b981' },
+      { name: 'Admin', value: adminCount, color: '#ef4444' }
+    ];
+  }, [allUserProfiles]);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -60,6 +78,79 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-2xl text-blue-500 flex flex-col items-center">
            <span className="text-2xl font-black">{allUserProfiles.length}</span>
            <span className="text-[10px] font-bold uppercase">Members</span>
+        </div>
+      </div>
+
+      {/* MEMBERSHIP SPLIT SUMMARY CARD WITH DONUT CHART */}
+      <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-xl">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="space-y-6 flex-1 w-full">
+            <div className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 leading-none">Permission Tiers</span>
+              <h3 className="text-3xl font-extrabold text-white tracking-tight">Active Membership Split</h3>
+              <p className="text-slate-400 text-sm font-medium">
+                Oversight and breakdown of access roles in Spokane's local recovery and mentorship ecosystem.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-slate-950/50 border border-slate-800/60 rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-slate-500 text-[10px] font-black uppercase tracking-wider">Users</span>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-blue-500">{roleStats[0].value}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">
+                    ({allUserProfiles.length > 0 ? Math.round((roleStats[0].value / allUserProfiles.length) * 100) : 0}%)
+                  </span>
+                </div>
+              </div>
+              
+              <div className="bg-slate-950/50 border border-slate-800/60 rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-slate-500 text-[10px] font-black uppercase tracking-wider">Mentors</span>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-emerald-500">{roleStats[1].value}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">
+                    ({allUserProfiles.length > 0 ? Math.round((roleStats[1].value / allUserProfiles.length) * 100) : 0}%)
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/50 border border-slate-800/60 rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-slate-500 text-[10px] font-black uppercase tracking-wider">Admins</span>
+                <div className="flex items-baseline gap-2 mt-2">
+                  <span className="text-2xl font-black text-rose-500">{roleStats[2].value}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">
+                    ({allUserProfiles.length > 0 ? Math.round((roleStats[2].value / allUserProfiles.length) * 100) : 0}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 w-full md:w-56 h-48 flex items-center justify-center relative bg-slate-950/40 border border-slate-800 rounded-3xl p-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={roleStats}
+                  innerRadius={52}
+                  outerRadius={68}
+                  paddingAngle={4}
+                  dataKey="value"
+                >
+                  {roleStats.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', fontSize: '11px', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute flex flex-col items-center pointer-events-none">
+              <span className="text-2xl font-black text-white">{allUserProfiles.length}</span>
+              <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest leading-none mt-1">Total</span>
+            </div>
+          </div>
         </div>
       </div>
 

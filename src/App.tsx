@@ -33,6 +33,7 @@ import {
 
 import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry } from './types';
 import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL, SPOKANE_RESOURCES } from './constants';
+import firebaseConfig from '../firebase-applet-config.json';
 import { SponsorApplicationForm } from './components/SponsorApplicationForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MeetingReviews } from './components/MeetingReviews';
@@ -434,14 +435,20 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    setAuthError('');
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential && credential.accessToken) {
         setCachedToken(credential.accessToken);
       }
-    } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, 'auth');
+    } catch (e: any) {
+      console.error("Google login error:", e);
+      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+        setAuthError('unauthorized-domain');
+      } else {
+        setAuthError(e.message || "Failed to sign in with Google.");
+      }
     }
   };
 
@@ -451,7 +458,14 @@ export default function App() {
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: any) {
-      setAuthError(e.message);
+      console.error("Email login error:", e);
+      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
+        setAuthError('recaptcha-verify-failed');
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+        setAuthError('unauthorized-domain');
+      } else {
+        setAuthError(e.message);
+      }
     }
   };
 
@@ -463,7 +477,14 @@ export default function App() {
       await sendEmailVerification(userCred.user);
       setResetSent(true);
     } catch (e: any) {
-      setAuthError(e.message);
+      console.error("Signup error:", e);
+      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
+        setAuthError('recaptcha-verify-failed');
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+        setAuthError('unauthorized-domain');
+      } else {
+        setAuthError(e.message);
+      }
     }
   };
 
@@ -474,7 +495,14 @@ export default function App() {
       await sendPasswordResetEmail(auth, email);
       setResetSent(true);
     } catch (e: any) {
-      setAuthError(e.message);
+      console.error("Password reset error:", e);
+      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
+        setAuthError('recaptcha-verify-failed');
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain')) {
+        setAuthError('unauthorized-domain');
+      } else {
+        setAuthError(e.message);
+      }
     }
   };
 
@@ -1138,8 +1166,58 @@ export default function App() {
                         <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">{authMode === 'login' ? 'Welcome Back' : 'Join the Network'}</h2>
                       </div>
                       {authError && (
-                        <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] font-bold uppercase text-center">
-                          {authError}
+                        <div>
+                          {authError === 'recaptcha-verify-failed' ? (
+                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-left space-y-3">
+                              <div className="flex items-center gap-2 text-rose-500">
+                                <AlertCircle size={16} className="shrink-0 animate-pulse" />
+                                <p className="text-[10px] font-black uppercase tracking-wider">reCAPTCHA Protection Blocked</p>
+                              </div>
+                              <p className="text-[10px] text-slate-300 font-medium leading-relaxed">
+                                Firebase reCAPTCHA Enterprise is blocking sign-up because this dynamic sandbox domain is not allowed on Google reCAPTCHA's domain list.
+                              </p>
+                              <div className="space-y-1.5 pt-2 border-t border-slate-805">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Option A: Disable Protection (Recommended for Dev)</p>
+                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-0.5 font-semibold">
+                                  <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Firebase Console</a></li>
+                                  <li>Authentication &gt; Settings &gt; User Actions</li>
+                                  <li>Disable <strong className="text-white">reCAPTCHA Enterprise</strong></li>
+                                </ol>
+                              </div>
+                              <div className="space-y-1.5 pt-2 border-t border-slate-805">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Option B: Authorize Hostname</p>
+                                <p className="text-[9px] text-slate-500 font-semibold">Add this domain to reCAPTCHA enterprise inside Firebase console:</p>
+                                <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 font-mono text-[9px] text-blue-400 select-all truncate text-center">
+                                  {typeof window !== 'undefined' ? window.location.hostname : ''}
+                                </div>
+                              </div>
+                            </div>
+                          ) : authError === 'unauthorized-domain' ? (
+                            <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-left space-y-3">
+                              <div className="flex items-center gap-2 text-amber-500">
+                                <AlertCircle size={16} className="shrink-0" />
+                                <p className="text-[10px] font-black uppercase tracking-wider">Unauthorized Domain</p>
+                              </div>
+                              <p className="text-[10px] text-slate-300 font-medium leading-relaxed">
+                                Firebase restricts authentication to registered domains. Add the current dynamic container's hostname to your Firebase Auth settings.
+                              </p>
+                              <div className="space-y-1.5 pt-2 border-t border-slate-805">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">How to authorize:</p>
+                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-0.5 font-semibold">
+                                  <li>Go to <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Firebase Auth Settings</a></li>
+                                  <li>In <strong className="text-white">Authorized domains</strong>, click <strong className="text-white">Add domain</strong></li>
+                                  <li>Paste the following hostname:</li>
+                                </ol>
+                                <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 font-mono text-[9px] text-blue-400 select-all truncate text-center mt-1">
+                                  {typeof window !== 'undefined' ? window.location.hostname : ''}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] font-bold uppercase text-center">
+                              {authError}
+                            </div>
+                          )}
                         </div>
                       )}
                       <form onSubmit={authMode === 'login' ? handleEmailLogin : handleSignup} className="space-y-4">
