@@ -31,7 +31,7 @@ async function startServer() {
       }
 
       const projectID = "gen-lang-client-0922849103";
-      const recaptchaKey = siteKey || "6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag";
+      const recaptchaKey = siteKey || "6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n";
 
       console.log(`[reCAPTCHA] Received request to verify token for action: ${action} with siteKey: ${recaptchaKey}`);
 

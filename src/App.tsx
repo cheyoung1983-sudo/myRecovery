@@ -11,7 +11,7 @@ import {
   UserCheck, Clock, ShieldCheck, Info, Accessibility,
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
   LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
-  Smile, Frown, Meh, AlertCircle, Check, BookOpen
+  Smile, Frown, Meh, AlertCircle, Check, BookOpen, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -65,6 +65,7 @@ import { MeetingDetailModal } from './components/MeetingDetailModal';
 import { WarmHandshakeModal } from './components/WarmHandshakeModal';
 import { MeetingMap } from './components/MeetingMap';
 import { ChatView } from './components/ChatView';
+import { GoogleChatView } from './components/GoogleChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const GOOGLE_MAPS_API_KEY =
@@ -337,7 +338,11 @@ export default function App() {
   };
   const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [chatSubView, setChatSubView] = useState<'direct' | 'google'>('direct');
   const [moodLogs, setMoodLogs] = useState<MoodEntry[]>([]);
+  const [fcmDiagnosticToken, setFcmDiagnosticToken] = useState<string>('');
+  const [isFcmDiagnosing, setIsFcmDiagnosing] = useState<boolean>(false);
+  const [fcmDiagnosticError, setFcmDiagnosticError] = useState<string | null>(null);
   
   const streak = useMemo(() => {
     if (moodLogs.length === 0) return 0;
@@ -813,7 +818,7 @@ export default function App() {
 
   const handleEnableNotifications = async () => {
     if (!currentUser) return;
-    const token = await requestForToken();
+    const token = await requestForToken(true);
     if (token) {
       try {
         await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -839,6 +844,32 @@ export default function App() {
       } else {
         showToast("Notifications are blocked in your browser settings.", "alert");
       }
+    }
+  };
+
+  const handleFetchFCMToken = async () => {
+    setIsFcmDiagnosing(true);
+    setFcmDiagnosticError(null);
+    setFcmDiagnosticToken('');
+    showToast("FirebaseMessaging.getInstance().getToken() triggered", "info");
+    try {
+      const token = await requestForToken(true);
+      if (token) {
+        setFcmDiagnosticToken(token);
+        console.log(`[FCM-Diagnostic] Fetching FCM registration token succeeded: ${token}`);
+        showToast(`Token retrieved successfully! msg_token_fmt: ${token.substring(0, 18)}...`, "success");
+      } else {
+        console.warn("[FCM-Diagnostic] Fetching FCM registration token failed (empty response).");
+        setFcmDiagnosticError("No token could be fetched. Ensure notifications are enabled and permission is granted in your browser settings.");
+        showToast("FCM verification failed: empty token received.", "alert");
+      }
+    } catch (e: any) {
+      console.error("[FCM-Diagnostic] Fetching FCM registration token failed with error:", e);
+      const errMsg = e?.message || String(e);
+      setFcmDiagnosticError(errMsg);
+      showToast("FCM registration token request failed", "alert");
+    } finally {
+      setIsFcmDiagnosing(false);
     }
   };
 
@@ -1252,13 +1283,80 @@ export default function App() {
           )}
 
           {tab === 'chat' && (
-            <ErrorBoundary>
-              {activeChatId && activeChat ? (
-                <ChatView session={activeChat} messages={messages} currentUser={currentUser} onBack={() => setActiveChatId(null)} onSendMessage={handleSendMessage} onTyping={handleUpdateTyping} />
-              ) : (
-                <ChatList chats={chatSessions.map(c => ({ ...c, sponsor: sponsors.find(s => s.id === c.sponsorId) }))} onSelectChat={(id) => setActiveChatId(id)} currentUserId={currentUser?.uid} />
-              )}
-            </ErrorBoundary>
+            <motion.div
+              key="chat"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="px-6 pb-32 space-y-6"
+            >
+              <ErrorBoundary>
+                {activeChatId && activeChat ? (
+                  <ChatView 
+                    session={activeChat} 
+                    messages={messages} 
+                    currentUser={currentUser} 
+                    onBack={() => setActiveChatId(null)} 
+                    onSendMessage={handleSendMessage} 
+                    onTyping={handleUpdateTyping} 
+                  />
+                ) : (
+                  <div className="space-y-6">
+                    {/* Header Sub Tab Toggle */}
+                    <div className="flex bg-slate-950 p-1.5 rounded-[2rem] border border-slate-900 shadow-xl">
+                      <button
+                        onClick={() => setChatSubView('direct')}
+                        className={`flex-1 py-4 text-center rounded-[1.755rem] text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          chatSubView === 'direct'
+                            ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-900/10'
+                            : 'bg-transparent text-slate-500 hover:text-slate-350'
+                        }`}
+                      >
+                        📬 Support Messages
+                      </button>
+                      <button
+                        onClick={() => setChatSubView('google')}
+                        className={`flex-1 py-4 text-center rounded-[1.755rem] text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          chatSubView === 'google'
+                            ? 'bg-gradient-to-r from-pink-600 to-indigo-600 text-white font-black shadow-lg'
+                            : 'bg-transparent text-slate-500 hover:text-slate-350'
+                        }`}
+                      >
+                        💬 Workspace Forums
+                      </button>
+                    </div>
+
+                    <AnimatePresence mode="wait">
+                      {chatSubView === 'direct' ? (
+                        <motion.div
+                          key="direct-list"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <ChatList 
+                            chats={chatSessions.map(c => ({ ...c, sponsor: sponsors.find(s => s.id === c.sponsorId) }))} 
+                            onSelectChat={(id) => setActiveChatId(id)} 
+                            currentUserId={currentUser?.uid} 
+                          />
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="google-list"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <GoogleChatView currentUserProfile={userProfile} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </ErrorBoundary>
+            </motion.div>
           )}
 
           {tab === 'apply' && (
@@ -1498,6 +1596,113 @@ export default function App() {
                       >
                         <motion.div layout className="w-6 h-6 bg-white rounded-full shadow-sm" />
                       </button>
+                    </div>
+
+                    {/* FCM Diagnostic Client Module matching Java's FirebaseMessaging.getInstance().getToken() */}
+                    <div className="bg-slate-950 border border-slate-900 p-6 rounded-[2rem] space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                          🛡️ FCM Diagnostic Module
+                        </span>
+                        <span className="text-[8.5px] bg-blue-500/10 text-blue-400 border border-blue-505/10 px-2 py-0.5 rounded font-mono font-bold uppercase">SDK Diagnostic</span>
+                      </div>
+                      
+                      <p className="text-[10.5px] text-slate-400 leading-normal">
+                        Simulates native <code className="text-pink-400 font-mono text-[9.5px] bg-slate-900 px-1.5 py-0.5 rounded">FirebaseMessaging.getInstance().getToken()</code> logic to retrieve your client device registration token.
+                      </p>
+
+                      <div className="flex gap-2.5">
+                        <button
+                          type="button"
+                          disabled={isFcmDiagnosing}
+                          onClick={handleFetchFCMToken}
+                          className="flex-1 py-3.5 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 rounded-xl text-[10px] text-blue-400 font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                        >
+                          <RefreshCw size={11} className={isFcmDiagnosing ? 'animate-spin' : ''} />
+                          {isFcmDiagnosing ? 'Fetching Token...' : 'Fetch FCM Token'}
+                        </button>
+
+                        {fcmDiagnosticToken && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(fcmDiagnosticToken);
+                              showToast("FCM Token copied to clipboard!", "success");
+                            }}
+                            className="px-4 py-3.5 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer active:scale-[0.98]"
+                          >
+                            Copy Token
+                          </button>
+                        )}
+                      </div>
+
+                      {fcmDiagnosticToken ? (
+                        <div className="space-y-2">
+                          <div className="bg-slate-900/60 rounded-2xl p-4 border border-slate-800/80 font-mono text-[9px] text-slate-300 break-all select-all whitespace-pre-wrap max-h-[100px] overflow-y-auto leading-relaxed">
+                            {fcmDiagnosticToken}
+                          </div>
+                          <div className="flex items-center justify-between text-[8px] text-slate-500 font-mono uppercase font-bold px-1">
+                            <span>FCM msg_token_fmt output</span>
+                            <span className="text-emerald-500">Success</span>
+                          </div>
+                        </div>
+                      ) : fcmDiagnosticError ? (
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-start gap-2.5 text-amber-500 text-xs">
+                            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold uppercase tracking-wider text-[10px]">Verification Failure Diagnosed</p>
+                              <p className="text-slate-400 text-xs font-semibold leading-relaxed mt-1">{fcmDiagnosticError}</p>
+                            </div>
+                          </div>
+
+                          {(fcmDiagnosticError.includes('PERMISSION_DENIED') || 
+                            fcmDiagnosticError.toLowerCase().includes('referer') || 
+                            fcmDiagnosticError.toLowerCase().includes('blocked') ||
+                            fcmDiagnosticError.toLowerCase().includes('installations')) && (
+                            <div className="bg-slate-900/40 p-3.5 rounded-xl border border-amber-500/10 space-y-2.5 text-[10.5px] leading-relaxed">
+                              <p className="text-slate-300 font-bold uppercase text-[9px] tracking-wide text-amber-400">
+                                🔧 Action Required: Google Cloud Console Referrer Policy
+                              </p>
+                              <p className="text-slate-400 font-medium">
+                                Your current Google Cloud API key restricts HTTP requests by referer policies, which blocks requests originating from this temporary development container.
+                              </p>
+                              <div className="bg-slate-900 p-3 rounded-lg border border-slate-850 space-y-2 text-[9.5px] font-mono text-slate-300">
+                                <p className="font-bold underline text-amber-400">How to authorize this preview URL:</p>
+                                <p>1. Open <span className="text-pink-400">Google Cloud Console</span> &gt; APIs &amp; Services &gt; Credentials.</p>
+                                <p>2. Edit the active API Key used by your Firebase setup.</p>
+                                <p>3. Under **Website restrictions**, add this dev endpoint:</p>
+                                <div className="flex gap-2 items-center mt-1">
+                                  <input 
+                                    type="text" 
+                                    readOnly 
+                                    value={`${typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app'}/*`}
+                                    className="text-white bg-slate-950 p-1.5 rounded border border-slate-800 break-all flex-1 text-[9px] font-bold"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const url = `${typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app'}/*`;
+                                      navigator.clipboard.writeText(url);
+                                      showToast("Authorized pattern copied!", "success");
+                                    }}
+                                    className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 rounded-md font-bold text-[8.5px] uppercase transition-all"
+                                  >
+                                    Copy URL
+                                  </button>
+                                </div>
+                                <p className="text-[8.5px] text-slate-500 mt-1">
+                                  (Alternatively, temporarily select "None" with no restriction during development/testing phase).
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="bg-slate-900/40 rounded-2xl p-4 border border-slate-900 text-center font-mono text-[9px] text-slate-600 italic">
+                          No token retrieved. Click Fetch above to trigger the FCM SDK.
+                        </div>
+                      )}
                     </div>
                   </div>
 

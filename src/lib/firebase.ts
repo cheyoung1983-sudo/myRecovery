@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
+import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const config = {
@@ -15,6 +16,21 @@ const config = {
 };
 
 const app = initializeApp(config);
+
+// Initialize Analytics and dynamically disable collection based on configured meta-data (defaults to false if explicit variable set)
+if (typeof window !== 'undefined') {
+  isSupported().then((supported) => {
+    if (supported) {
+      const analyticsEnabled = import.meta.env.VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED === 'true';
+      console.log(`[Firebase Analytics] Initializing collection with VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED: ${analyticsEnabled}`);
+      const analytics = getAnalytics(app);
+      setAnalyticsCollectionEnabled(analytics, analyticsEnabled);
+    }
+  }).catch((err) => {
+    console.warn('[Firebase Analytics] Analytics initialization check bypassed:', err);
+  });
+}
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
@@ -23,14 +39,55 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar');
 
 export { onMessage };
-export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 
-export const requestForToken = async () => {
-  if (!messaging) return null;
+let messagingInstance: Messaging | null = null;
+if (typeof window !== 'undefined') {
+  const autoInitEnabled = import.meta.env.VITE_FIREBASE_MESSAGING_AUTO_INIT_ENABLED !== 'false';
+  if (autoInitEnabled) {
+    try {
+      messagingInstance = getMessaging(app);
+    } catch (err) {
+      console.warn('[Firebase Messaging] Initialization bypassed or unsupported in current context: ', err);
+    }
+  } else {
+    console.log('[Firebase Messaging] Auto initialization is disabled; lazy-loading Messaging on first user interaction.');
+  }
+}
+export const messaging = messagingInstance;
+
+export const requestForToken = async (bypassConfigCheck = false) => {
+  const autoInitEnabled = import.meta.env.VITE_FIREBASE_MESSAGING_AUTO_INIT_ENABLED !== 'false';
+  if (!autoInitEnabled && !bypassConfigCheck) {
+    console.warn('[Firebase Messaging] Auto initialization token request is disabled via configuration VITE_FIREBASE_MESSAGING_AUTO_INIT_ENABLED=false.');
+    return null;
+  }
+
+  let activeMessaging = messagingInstance;
+  if (!activeMessaging && typeof window !== 'undefined') {
+    try {
+      activeMessaging = getMessaging(app);
+      messagingInstance = activeMessaging;
+      
+      onMessage(activeMessaging, (payload) => {
+        console.log('[Firebase Messaging] Direct lazy message received: ', payload);
+        if (payload.notification && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(payload.notification.title || 'New Announcement', {
+            body: payload.notification.body || ''
+          });
+        }
+      });
+    } catch (err) {
+      console.error('[Firebase Messaging] Lazy initialization failed during token request: ', err);
+      throw err;
+    }
+  }
+
+  if (!activeMessaging) return null;
+
   try {
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      const currentToken = await getToken(messaging, { 
+      const currentToken = await getToken(activeMessaging, { 
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY 
       });
       if (currentToken) {
@@ -40,9 +97,10 @@ export const requestForToken = async () => {
         return null;
       }
     }
-  } catch (err) {
-    console.error('An error occurred while retrieving token. ', err);
     return null;
+  } catch (err) {
+    console.error('An error occurred while retrieving token: ', err);
+    throw err;
   }
 };
 
