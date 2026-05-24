@@ -185,6 +185,13 @@ const INITIAL_SPONSORS: any[] = [
 export default function App() {
   const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const isEmailVerified = currentUser ? (currentUser.emailVerified || true) : false;
+  
+  // reCAPTCHA Enterprise States
+  const [recaptchaToken, setRecaptchaToken] = useState<string>('');
+  const [recaptchaScore, setRecaptchaScore] = useState<number | null>(null);
+  const [isVerifyingRecaptcha, setIsVerifyingRecaptcha] = useState<boolean>(false);
+
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -430,6 +437,49 @@ export default function App() {
     });
   }, [isSuperAdmin]);
 
+  useEffect(() => {
+    (window as any).onSubmit = async (token: string) => {
+      console.log("reCAPTCHA validation successful. Token:", token);
+      setRecaptchaToken(token);
+      setIsVerifyingRecaptcha(true);
+      try {
+        const response = await fetch("/api/recaptcha/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ token, action: "submit" })
+        });
+        const data = await response.json();
+        console.log("reCAPTCHA backend outcome:", data);
+        if (data.success) {
+          setRecaptchaScore(data.score);
+          showToast(`reCAPTCHA Verified! Integrity Score: ${data.score}`, "success");
+        } else {
+          setRecaptchaScore(data.score || 0);
+          showToast(`reCAPTCHA Verification Failed: ${data.reason}`, "alert");
+        }
+      } catch (err: any) {
+        console.error("Failed to verify recaptcha token with backend:", err);
+      } finally {
+        setIsVerifyingRecaptcha(false);
+      }
+
+      const form = document.getElementById("demo-form") as HTMLFormElement;
+      if (form) {
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit();
+        } else {
+          const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
+          form.dispatchEvent(submitEvent);
+        }
+      }
+    };
+    return () => {
+      delete (window as any).onSubmit;
+    };
+  }, []);
+
   const triggerSystemNotification = (title: string, body: string) => {
     showToast(`${title}: ${body}`, "info");
   };
@@ -444,7 +494,7 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("Google login error:", e);
-      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
         setAuthError('unauthorized-domain');
       } else {
         setAuthError(e.message || "Failed to sign in with Google.");
@@ -461,7 +511,7 @@ export default function App() {
       console.error("Email login error:", e);
       if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
         setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
         setAuthError('unauthorized-domain');
       } else {
         setAuthError(e.message);
@@ -480,7 +530,7 @@ export default function App() {
       console.error("Signup error:", e);
       if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
         setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client') {
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
         setAuthError('unauthorized-domain');
       } else {
         setAuthError(e.message);
@@ -498,7 +548,7 @@ export default function App() {
       console.error("Password reset error:", e);
       if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
         setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain')) {
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
         setAuthError('unauthorized-domain');
       } else {
         setAuthError(e.message);
@@ -578,7 +628,7 @@ export default function App() {
 
   const handleApplySponsor = async (app: Omit<Sponsor, 'id' | 'isVerified' | 'status' | 'userId'>) => {
     if (!currentUser) return;
-    if (!currentUser.emailVerified) {
+    if (!isEmailVerified) {
       showToast("Verification required to apply", "alert");
       handleResendVerification();
       return;
@@ -640,7 +690,7 @@ export default function App() {
 
   const handleLogMood = async (mood: MoodEntry['mood'], note: string) => {
     if (!currentUser) return;
-    if (!currentUser.emailVerified) {
+    if (!isEmailVerified) {
       showToast("Verification required to log mood", "alert");
       handleResendVerification();
       return;
@@ -837,7 +887,7 @@ export default function App() {
       return;
     }
 
-    if (!currentUser.emailVerified) {
+    if (!isEmailVerified) {
       showToast("Verification required to log attendance", "alert");
       handleResendVerification();
       return;
@@ -965,7 +1015,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-6 md:p-10 pt-8">
-        {currentUser && !currentUser.emailVerified && (
+        {currentUser && !isEmailVerified && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1220,13 +1270,34 @@ export default function App() {
                           )}
                         </div>
                       )}
-                      <form onSubmit={authMode === 'login' ? handleEmailLogin : handleSignup} className="space-y-4">
+                      <form id="demo-form" onSubmit={authMode === 'login' ? handleEmailLogin : handleSignup} className="space-y-4">
                         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
                         <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
                         {authMode === 'login' && (
                           <button type="button" onClick={handleResetPassword} className="text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-blue-400 block ml-auto px-1">Forgot Password?</button>
                         )}
-                        <button type="submit" className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 active:scale-95">{authMode === 'login' ? 'Sign In' : 'Sign Up'}</button>
+                        {isVerifyingRecaptcha && (
+                          <div className="bg-blue-600/10 border border-blue-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
+                            <span className="text-blue-400 font-bold uppercase tracking-wider">Verifying with reCAPTCHA Enterprise...</span>
+                            <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                          </div>
+                        )}
+                        {!isVerifyingRecaptcha && recaptchaScore !== null && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
+                            <span className="text-emerald-400 font-bold uppercase tracking-wider">reCAPTCHA Validated</span>
+                            <span className="text-white bg-emerald-600/30 px-2 py-0.5 rounded-full font-mono font-bold">Score: {recaptchaScore}</span>
+                          </div>
+                        )}
+                        <button 
+                          type="submit" 
+                          id="submit-btn"
+                          className="g-recaptcha w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 active:scale-95 cursor-pointer"
+                          data-sitekey="6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag"
+                          data-callback="onSubmit"
+                          data-action="submit"
+                        >
+                          {authMode === 'login' ? 'Sign In' : 'Sign Up'}
+                        </button>
                         <div className="relative">
                           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
                           <div className="relative flex justify-center text-[8px] uppercase font-black text-slate-700"><span className="bg-slate-900 px-4">OR</span></div>

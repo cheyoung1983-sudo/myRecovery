@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
+    "@google-cloud/recaptcha-enterprise": "^6.4.1",
     "@google/genai": "^1.52.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vis.gl/react-google-maps": "^1.8.3",
