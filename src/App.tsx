@@ -33,7 +33,9 @@ import {
 
 import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry } from './types';
 import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL, SPOKANE_RESOURCES } from './constants';
-import firebaseConfig from '../firebase-applet-config.json';
+const firebaseConfig = {
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0922849103'
+};
 import { SponsorApplicationForm } from './components/SponsorApplicationForm';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MeetingReviews } from './components/MeetingReviews';
@@ -186,6 +188,28 @@ const INITIAL_SPONSORS: any[] = [
 export default function App() {
   const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+
+  useEffect(() => {
+    const checkHash = () => {
+      const hash = window.location.hash;
+      if (hash === '#/privacy') {
+        setShowPrivacyModal(true);
+        setShowTermsModal(false);
+      } else if (hash === '#/terms') {
+        setShowTermsModal(true);
+        setShowPrivacyModal(false);
+      }
+    };
+    
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => {
+      window.removeEventListener('hashchange', checkHash);
+    };
+  }, []);
   const isEmailVerified = currentUser ? (currentUser.emailVerified || true) : false;
   
   // reCAPTCHA Enterprise States
@@ -1733,6 +1757,37 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Verification & Legal Footer */}
+        <footer id="compliance-verified-footer" className="mt-20 border-t border-slate-800/80 pt-8 pb-20 flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left text-slate-500 text-[11px] font-sans">
+          <div className="space-y-1">
+            <p className="font-bold text-slate-400">© 2026 myRecovery Spokane Peer Network</p>
+            <p className="text-[10px] leading-relaxed">Dedicated secure platform for peer-supported sobriety meetings and therapeutic resources.</p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-6 font-bold uppercase tracking-wider text-[10px]">
+            <a 
+              href="#" 
+              onClick={(e) => { e.preventDefault(); setTab('meetings'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              className="hover:text-blue-400 transition-colors"
+            >
+              Home Page
+            </a>
+            <a 
+              href="#/privacy" 
+              onClick={(e) => { e.preventDefault(); window.location.hash = '#/privacy'; setShowPrivacyModal(true); }}
+              className="hover:text-blue-400 transition-colors"
+            >
+              Privacy Policy
+            </a>
+            <a 
+              href="#/terms" 
+              onClick={(e) => { e.preventDefault(); window.location.hash = '#/terms'; setShowTermsModal(true); }}
+              className="hover:text-blue-400 transition-colors"
+            >
+              Terms of Service
+            </a>
+          </div>
+        </footer>
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 py-4 px-6 bg-[#0f172a]/95 backdrop-blur-2xl border-t border-slate-800/80 flex justify-around items-center z-50 shadow-2xl safe-area-bottom">
@@ -1785,6 +1840,124 @@ export default function App() {
         )}
         {reachingOutTo && (
           <WarmHandshakeModal sponsor={reachingOutTo} onClose={() => setReachingOutTo(null)} onStartChat={(text) => handleStartChat(reachingOutTo, text)} />
+        )}
+        {showPrivacyModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9999]"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-850 rounded-[2.5rem] p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto space-y-6 shadow-2xl relative scrollbar-none"
+            >
+              <button 
+                onClick={() => { setShowPrivacyModal(false); if (window.location.hash === '#/privacy') window.location.hash = ''; }}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="space-y-4">
+                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Legal Policy Directory</span>
+                <h3 className="text-2xl font-black text-white uppercase italic tracking-tight">Privacy Policy – myRecovery</h3>
+                <p className="text-[11px] text-slate-500 font-bold font-mono">Last updated: May 24, 2026</p>
+              </div>
+
+              <div className="space-y-4 text-xs text-slate-350 leading-relaxed font-sans font-medium">
+                <p className="font-bold underline text-white">1. Information We Collect</p>
+                <p>
+                  myRecovery Spokane is designed to protect your anonymity. We collect basic account credentials via your chosen OAuth Provider (e.g. Google) solely to synchronize your sobriety checklist, recovery backup worksheets, and Google Chat circular coordinates. We never sell, transmit, or license your personal information.
+                </p>
+
+                <p className="font-bold underline text-white">3. Scope Connection & Google User Data</p>
+                <p>
+                  When you choose to authenticate your Google Account, our client connects directly to Google services. We utilize the chat and calendar scopes only with user authorization to publish updates or backup checklists. Google data is never parsed or archived on our backend databases.
+                </p>
+
+                <p className="font-bold underline text-white">3. Third-party APIs & Sound Services</p>
+                <p>
+                  All local GPS feeds remain strictly local and anonymized. Real-time diagnostic channels do not trace your IP address.
+                </p>
+
+                <p className="font-bold underline text-white">4. Your Control Options</p>
+                <p>
+                  You may at any time revoke permissions in your Google account settings or wipe local persistent databases instantly by clearing App data inside your browser settings tray.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800/80 flex justify-end">
+                <button 
+                  onClick={() => { setShowPrivacyModal(false); if (window.location.hash === '#/privacy') window.location.hash = ''; }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Close & Return
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {showTermsModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9999]"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-850 rounded-[2.5rem] p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto space-y-6 shadow-2xl relative scrollbar-none"
+            >
+              <button 
+                onClick={() => { setShowTermsModal(false); if (window.location.hash === '#/terms') window.location.hash = ''; }}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="space-y-4">
+                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Legal Policy Directory</span>
+                <h3 className="text-2xl font-black text-white uppercase italic tracking-tight">Terms of Service – myRecovery</h3>
+                <p className="text-[11px] text-slate-500 font-bold font-mono">Last updated: May 24, 2026</p>
+              </div>
+
+              <div className="space-y-4 text-xs text-slate-350 leading-relaxed font-sans font-medium">
+                <p className="font-bold underline text-white">1. Acceptance of Terms</p>
+                <p>
+                  By using myRecovery Spokane, you acknowledge and agree to respect all group community rules and treat all members with clean, supportive integrity. This application is a prototype intended solely for sobriety peer-support and wellness assistance.
+                </p>
+
+                <p className="font-bold underline text-white">2. Medical Disclaimer (Critical Information)</p>
+                <p className="text-amber-400 font-semibold italic bg-amber-500/5 p-4 rounded-2xl border border-amber-500/10">
+                  ⚠️ IMPORTANT: THIS APPLICATION IS NOT A MEDICAL DISCOVERY TOOL, EMERGENCY TRIAGE SYSTEM, CLINICAL CLINIC, OR FORMAL DIAGNOSTIC DIAGNOSIS SUITE. If you are experiencing physiological distress, severe withdrawal symptoms, or crisis, please immediately utilize standard local professional hotlines (911 or local emergency services).
+                </p>
+
+                <p className="font-bold underline text-white">3. Third-party Google Access</p>
+                <p>
+                  Users assume all responsibility for authorizing APIs inside our sandbox interface. We do not guarantee continuous uptime of intermediate Google API tokens.
+                </p>
+
+                <p className="font-bold underline text-white">4. Group Rules & Misconduct</p>
+                <p>
+                  Harassment, clinical diagnostic assumptions, or advertising within group chat forums will result in immediate permanent block lists.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-slate-800/80 flex justify-end">
+                <button 
+                  onClick={() => { setShowTermsModal(false); if (window.location.hash === '#/terms') window.location.hash = ''; }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Close & Return
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

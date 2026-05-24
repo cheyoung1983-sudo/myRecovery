@@ -3,7 +3,7 @@ import {
   CheckSquare, MessageSquare, FileText, Plus, Send, Check, 
   ExternalLink, Sparkles, RefreshCw, AlertCircle, Share2, Clipboard, 
   AlertTriangle, Heart, Calendar, ArrowRight, Mail, Users, Video, Grid, HardDrive,
-  FolderOpen, Presentation
+  FolderOpen, Presentation, X, Globe, ShieldCheck
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getCachedToken, connectGoogleCalendar } from '../lib/googleCalendar';
@@ -44,6 +44,10 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [tasksLoading, setTasksLoading] = useState(false);
 
   // Google Chat State
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
   const [spaces, setSpaces] = useState<any[]>([]);
   const [selectedSpaceId, setSelectedSpaceId] = useState<string>('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -2412,6 +2416,272 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
             {/* Picker Footer */}
             <div className="p-5 border-t border-slate-800 bg-slate-950/40 text-[9px] text-slate-500 text-center font-bold uppercase tracking-widest font-mono">
               Google Workspace Picker Suite - 100% Client-Side Sandbox Integration
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* GOOGLE OAUTH CONSENT REQUIREMENTS PANEL */}
+      <div id="google-oauth-consent-panel" className="bg-slate-900/40 p-8 rounded-[3rem] border border-slate-800 space-y-6 mt-8">
+        <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
+          <div className="p-2 bg-blue-500/10 rounded-2xl text-blue-400 border border-blue-500/10">
+            <Globe size={20} />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider">Google OAuth Consent & Verified Links Center</h3>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Required URL Assets for Google Verification</p>
+          </div>
+        </div>
+
+        <p className="text-slate-400 text-xs font-semibold leading-relaxed">
+          Google only allows OAuth applications to request sensitive scopes (such as Google Chat and Documents) when configured with verified application directories, privacy policy guidelines, and Authorized Domains. Use these copyable parameters inside the <span className="text-blue-400 font-bold">Google Cloud Console &gt; APIs & Services &gt; OAuth Consent Screen</span> to protect your users and satisfy Google’s policies:
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+          {/* Left Column: Essential Links */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Application Home Page</span>
+                <span className="text-[9px] text-slate-500 font-mono italic">App Local Target</span>
+              </label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app'}
+                  className="text-white bg-slate-950 p-2.5 rounded-xl border border-slate-800 truncate flex-1 text-[11px] font-mono leading-none focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val = typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app';
+                    navigator.clipboard.writeText(val);
+                    setCopiedField('homepage');
+                    setTimeout(() => setCopiedField(null), 2500);
+                  }}
+                  className="px-3.5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap min-w-[85px] text-center"
+                >
+                  {copiedField === 'homepage' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Application Privacy Policy Link</span>
+                <button 
+                  onClick={() => setShowPrivacyModal(true)}
+                  className="text-[9px] text-blue-400 hover:underline font-bold uppercase transition-all cursor-pointer"
+                >
+                  Preview Text
+                </button>
+              </label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={typeof window !== 'undefined' ? `${window.location.origin}/#/privacy` : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/#/privacy'}
+                  className="text-white bg-slate-950 p-2.5 rounded-xl border border-slate-800 truncate flex-1 text-[11px] font-mono leading-none focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val = typeof window !== 'undefined' ? `${window.location.origin}/#/privacy` : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/#/privacy';
+                    navigator.clipboard.writeText(val);
+                    setCopiedField('privacy');
+                    setTimeout(() => setCopiedField(null), 2500);
+                  }}
+                  className="px-3.5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap min-w-[85px] text-center"
+                >
+                  {copiedField === 'privacy' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Application Terms of Service Link</span>
+                <button 
+                  onClick={() => setShowTermsModal(true)}
+                  className="text-[9px] text-blue-400 hover:underline font-bold uppercase transition-all cursor-pointer"
+                >
+                  Preview Text
+                </button>
+              </label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={typeof window !== 'undefined' ? `${window.location.origin}/#/terms` : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/#/terms'}
+                  className="text-white bg-slate-950 p-2.5 rounded-xl border border-slate-800 truncate flex-1 text-[11px] font-mono leading-none focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val = typeof window !== 'undefined' ? `${window.location.origin}/#/terms` : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/#/terms';
+                    navigator.clipboard.writeText(val);
+                    setCopiedField('terms');
+                    setTimeout(() => setCopiedField(null), 2500);
+                  }}
+                  className="px-3.5 py-2.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer whitespace-nowrap min-w-[85px] text-center"
+                >
+                  {copiedField === 'terms' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Authorized Domains & Steps */}
+          <div className="p-5 bg-slate-950 hover:bg-slate-950/80 transition-all rounded-[2rem] border border-slate-850 space-y-4">
+            <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5 font-sans leading-none">
+              <ShieldCheck size={14} className="mt-0.5" />
+              <span>Authorized Domains Registry</span>
+            </h4>
+            <p className="text-slate-400 text-[11px] leading-relaxed">
+              Google OAuth security constraints restrict login redirects and APIs to approved domains. Register these domains in your GCP credentials to prevent error screens:
+            </p>
+            <div className="space-y-2 font-mono text-[10.5px]">
+              <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-xl border border-slate-850">
+                <span className="text-slate-300 truncate mr-2">{typeof window !== 'undefined' ? window.location.hostname : 'ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app'}</span>
+                <button 
+                  onClick={() => {
+                    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app';
+                    navigator.clipboard.writeText(hostname);
+                    setCopiedField('domain1');
+                    setTimeout(() => setCopiedField(null), 2000);
+                  }}
+                  className="text-blue-400 text-[9px] uppercase font-black hover:underline tracking-wider shrink-0"
+                >
+                  {copiedField === 'domain1' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-xl border border-slate-850">
+                <span className="text-slate-300">firebaseapp.com</span>
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText('firebaseapp.com');
+                    setCopiedField('domain2');
+                    setTimeout(() => setCopiedField(null), 2000);
+                  }}
+                  className="text-blue-400 text-[9px] uppercase font-black hover:underline tracking-wider shrink-0"
+                >
+                  {copiedField === 'domain2' ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 italic">
+              Verification status: Adding these URLs guarantees that downstream OAuth consent dialogues compile cleanly without triggering domain verification flags.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* PRIVACY POLICY DIALOG MODAL */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto space-y-6 shadow-2xl relative scrollbar-none"
+          >
+            <button 
+              onClick={() => setShowPrivacyModal(false)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-all cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="space-y-4">
+              <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Legal Policy Directory</span>
+              <h3 className="text-2xl font-black text-white uppercase italic tracking-tight">Privacy Policy – myRecovery</h3>
+              <p className="text-[11px] text-slate-500 font-bold font-mono">Last updated: May 24, 2026</p>
+            </div>
+
+            <div className="space-y-4 text-xs text-slate-350 leading-relaxed font-sans font-medium">
+              <p className="font-bold underline text-white">1. Information We Collect</p>
+              <p>
+                myRecovery Spokane is designed to protect your anonymity. We collect basic account credentials via your chosen OAuth Provider (e.g. Google) solely to synchronize your sobriety checklist, recovery backup worksheets, and Google Chat circular coordinates. We never sell, transmit, or license your personal information.
+              </p>
+
+              <p className="font-bold underline text-white">2. Scope Connection & Google User Data</p>
+              <p>
+                When you choose to authenticate your Google Account, our client connects directly to Google services. We utilize the chat and calendar scopes only with user authorization to publish updates or backup checklists. Google data is never parsed or archived on our backend databases.
+              </p>
+
+              <p className="font-bold underline text-white">3. Third-party APIs & Sound Services</p>
+              <p>
+                All local GPS feeds remain strictly local and anonymized. Real-time diagnostic channels do not trace your IP address.
+              </p>
+
+              <p className="font-bold underline text-white">4. Your Control Options</p>
+              <p>
+                You may at any time revoke permissions in your Google account settings or wipe local persistent databases instantly by clearing App data inside your browser settings tray.
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-slate-850 flex justify-end">
+              <button 
+                onClick={() => setShowPrivacyModal(false)}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Close & Return
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* TERMS OF SERVICE DIALOG MODAL */}
+      {showTermsModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto space-y-6 shadow-2xl relative scrollbar-none"
+          >
+            <button 
+              onClick={() => setShowTermsModal(false)}
+              className="absolute top-6 right-6 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-all cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="space-y-4">
+              <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Legal Policy Directory</span>
+              <h3 className="text-2xl font-black text-white uppercase italic tracking-tight">Terms of Service – myRecovery</h3>
+              <p className="text-[11px] text-slate-500 font-bold font-mono">Last updated: May 24, 2026</p>
+            </div>
+
+            <div className="space-y-4 text-xs text-slate-350 leading-relaxed font-sans font-medium">
+              <p className="font-bold underline text-white">1. Acceptance of Terms</p>
+              <p>
+                By using myRecovery Spokane, you acknowledge and agree to respect all group community rules and treat all members with clean, supportive integrity. This application is a prototype intended solely for sobriety peer-support and wellness assistance.
+              </p>
+
+              <p className="font-bold underline text-white">2. Medical Disclaimer (Critical Information)</p>
+              <p className="text-amber-400 font-semibold italic bg-amber-500/5 p-4 rounded-2xl border border-amber-500/10">
+                ⚠️ IMPORTANT: THIS APPLICATION IS NOT A MEDICAL DISCOVERY TOOL, EMERGENCY TRIAGE SYSTEM, CLINICAL CLINIC, OR FORMAL DIAGNOSTIC DIAGNOSIS SUITE. If you are experiencing physiological distress, severe withdrawal symptoms, or crisis, please immediately utilize standard local professional hotlines (911 or local emergency services).
+              </p>
+
+              <p className="font-bold underline text-white">3. Third-party Google Access</p>
+              <p>
+                Users assume all responsibility for authorizing APIs inside our sandbox interface. We do not guarantee continuous uptime of intermediate Google API tokens.
+              </p>
+
+              <p className="font-bold underline text-white">4. Group Rules & Misconduct</p>
+              <p>
+                Harassment, clinical diagnostic assumptions, or advertising within group chat forums will result in immediate permanent block lists.
+              </p>
+            </div>
+
+            <div className="pt-4 border-t border-slate-850 flex justify-end">
+              <button 
+                onClick={() => setShowTermsModal(false)}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Close & Return
+              </button>
             </div>
           </motion.div>
         </div>

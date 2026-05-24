@@ -3,32 +3,44 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
-import firebaseConfig from '../../firebase-applet-config.json';
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gen-lang-client-0922849103.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0922849103',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'gen-lang-client-0922849103.appspot.com',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
+};
 
 const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId,
+  apiKey: firebaseConfig.apiKey,
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  storageBucket: firebaseConfig.storageBucket,
+  messagingSenderId: firebaseConfig.messagingSenderId,
+  appId: firebaseConfig.appId,
+  measurementId: firebaseConfig.measurementId,
 };
 
 const app = initializeApp(config);
 
 // Initialize Analytics and dynamically disable collection based on configured meta-data (defaults to false if explicit variable set)
 if (typeof window !== 'undefined') {
-  isSupported().then((supported) => {
-    if (supported) {
-      const analyticsEnabled = import.meta.env.VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED === 'true';
-      console.log(`[Firebase Analytics] Initializing collection with VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED: ${analyticsEnabled}`);
-      const analytics = getAnalytics(app);
-      setAnalyticsCollectionEnabled(analytics, analyticsEnabled);
-    }
-  }).catch((err) => {
-    console.warn('[Firebase Analytics] Analytics initialization check bypassed:', err);
-  });
+  const analyticsEnabled = import.meta.env.VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED === 'true';
+  if (analyticsEnabled) {
+    isSupported().then((supported) => {
+      if (supported) {
+        console.log(`[Firebase Analytics] Initializing collection with VITE_FIREBASE_ANALYTICS_COLLECTION_ENABLED: true`);
+        const analytics = getAnalytics(app);
+        setAnalyticsCollectionEnabled(analytics, true);
+      }
+    }).catch((err) => {
+      console.warn('[Firebase Analytics] Analytics initialization check bypassed:', err);
+    });
+  } else {
+    console.log('[Firebase Analytics] Analytics collection is disabled. Bypassing library initialization to prevent unauthorized background HTTP referer checks.');
+  }
 }
 
 export const db = initializeFirestore(app, {
@@ -37,6 +49,8 @@ export const db = initializeFirestore(app, {
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar');
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
 
 export { onMessage };
 
@@ -98,8 +112,19 @@ export const requestForToken = async (bypassConfigCheck = false) => {
       }
     }
     return null;
-  } catch (err) {
+  } catch (err: any) {
     console.error('An error occurred while retrieving token: ', err);
+    const errorString = String(err?.message || err);
+    if (
+      errorString.includes('PERMISSION_DENIED') || 
+      errorString.toLowerCase().includes('referer') || 
+      errorString.toLowerCase().includes('blocked') ||
+      errorString.toLowerCase().includes('installations')
+    ) {
+      const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app';
+      const customErr = new Error(`Installations: Create Installation request failed with error "403 PERMISSION_DENIED: Requests from referer ${originUrl}/ are blocked." (installations/request-failed). To resolve, update your GCP API key restrictions to authorize this temporary origin.`);
+      throw customErr;
+    }
     throw err;
   }
 };
