@@ -2,6 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Suppress benign WebSocket/Vite HMR connection errors/rejections expected in sandboxed iframe environments.
+      window.addEventListener('unhandledrejection', function(event) {
+        const reason = event.reason;
+        const msg = reason ? (reason.message || String(reason)) : '';
+        if (msg && (msg.includes('WebSocket') || msg.includes('vite') || msg.includes('websocket'))) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          console.warn('[Benign Sandbox WebSocket Rejection Suppressed]', reason);
+        }
+      });
+      window.addEventListener('error', function(event) {
+        const message = event.message || '';
+        if (message.includes('WebSocket') || message.includes('vite') || message.includes('websocket')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          console.warn('[Benign Sandbox WebSocket Error Suppressed]', message);
+        }
+      }, true);
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>myRecovery Spokane</title>
     <script src="https://www.google.com/recaptcha/enterprise.js?render=6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag"></script>
