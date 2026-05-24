@@ -6,6 +6,7 @@ import {
   FolderOpen, Presentation, X, Globe, ShieldCheck
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
 import { getCachedToken, connectGoogleCalendar } from '../lib/googleCalendar';
 
 interface WorkspaceIntegrationsProps {
@@ -20,7 +21,7 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [successMsg, setSuccessMsg] = useState('');
 
   // Active Integration Navigation Tab
-  const [activeTab, setActiveTab] = useState<'daily' | 'drive' | 'gmail' | 'sheets' | 'meet' | 'slides'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'forms' | 'drive' | 'gmail' | 'sheets' | 'meet' | 'slides'>('daily');
 
   // Google Slides States
   const [presentationId, setPresentationId] = useState('');
@@ -77,6 +78,9 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [generatedFormUrl, setGeneratedFormUrl] = useState<string>('');
   const [formsLoading, setFormsLoading] = useState(false);
   const [formResponses, setFormResponses] = useState<any[]>([]);
+  const [selectedFormTemplate, setSelectedFormTemplate] = useState<'general' | 'sponsor' | 'meeting'>('general');
+  const [formAnalysis, setFormAnalysis] = useState<string>('');
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   // Google Drive & Docs (Journaling) States
   const [driveFiles, setDriveFiles] = useState<any[]>([]);
@@ -135,8 +139,10 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
 
     const savedFormId = localStorage.getItem('myrecovery_saved_form_id');
     const savedFormUrl = localStorage.getItem('myrecovery_saved_form_url');
+    const savedTemplate = localStorage.getItem('myrecovery_saved_form_template');
     if (savedFormId) setGeneratedFormId(savedFormId);
     if (savedFormUrl) setGeneratedFormUrl(savedFormUrl);
+    if (savedTemplate) setSelectedFormTemplate(savedTemplate as any);
 
     const savedSlidesId = localStorage.getItem('myrecovery_saved_slides_id');
     const savedSlidesUrl = localStorage.getItem('myrecovery_saved_slides_url');
@@ -737,33 +743,184 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
 
   // --- GOOGLE FORMS API ACTIONS ---
 
-  const handleCreateWellnessForm = async () => {
+  const handleCreateWellnessForm = async (templateOverride?: 'general' | 'sponsor' | 'meeting') => {
     if (!token) return;
+    const template = templateOverride || selectedFormTemplate;
     setFormsLoading(true);
     setErrorMsg('');
+    setFormAnalysis('');
     try {
-      // Step A: Create standard Form
-      const resCreate = await fetch('https://forms.googleapis.com/v1/forms', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          info: {
-            title: 'myRecovery Reflections & Daily Check-In',
-            documentTitle: 'myRecovery Daily Check-In'
-          }
-        })
-      });
-      if (!resCreate.ok) throw new Error('Failed to instantiate Form');
-      const formObj = await resCreate.json();
-      const formId = formObj.formId;
-      const responderUri = formObj.responderUri;
+      let formTitle = 'myRecovery Reflections & Daily Check-In';
+      let documentTitle = 'myRecovery Daily Check-In';
+      let updateRequests: any[] = [];
 
-      // Step B: Set up core recovery evaluation questions in a batch update
-      const updateData = {
-        requests: [
+      if (template === 'sponsor') {
+        formTitle = 'myRecovery Sponsor Accountability Check-In';
+        documentTitle = 'Sponsor Check-In Form';
+        updateRequests = [
+          {
+            createItem: {
+              item: {
+                title: 'How intense were your cravings/temptations today?',
+                description: 'Assess honestly so we can adjust support vectors.',
+                questionItem: {
+                  question: {
+                    required: true,
+                    choiceQuestion: {
+                      type: 'RADIO',
+                      options: [
+                        { value: '1 - Zero cravings, feeling completely steady' },
+                        { value: '2 - Fleeting thoughts but easily dismissed' },
+                        { value: '3 - Moderate cravings, had to use recovery practices' },
+                        { value: '4 - Strong cravings, needed support contact' },
+                        { value: '5 - Crisis-level cravings, actively struggling' }
+                      ]
+                    }
+                  }
+                }
+              },
+              location: { index: 0 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'Did you connect with your Sponsor or Support Peers today?',
+                questionItem: {
+                  question: {
+                    required: true,
+                    choiceQuestion: {
+                      type: 'RADIO',
+                      options: [
+                        { value: 'Yes, had a deep connection or meeting' },
+                        { value: 'Yes, short check-in/text message' },
+                        { value: 'No, but I did self-reflection' },
+                        { value: 'No contact with supports today' }
+                      ]
+                    }
+                  }
+                }
+              },
+              location: { index: 1 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'Which 12-Step or Recovery Work did you practice today?',
+                questionItem: {
+                  question: {
+                    required: true,
+                    choiceQuestion: {
+                      type: 'CHECKBOX',
+                      options: [
+                        { value: 'Read program literature / text study' },
+                        { value: 'Wrote on steps / spiritual inventory' },
+                        { value: 'Meditated or said routine prayers' },
+                        { value: 'Shared with a sponsee / peer help' }
+                      ]
+                    }
+                  }
+                }
+              },
+              location: { index: 2 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'Accountability Notes, Prayer Targets, or General Comments:',
+                questionItem: {
+                  question: {
+                    textQuestion: { paragraph: true }
+                  }
+                }
+              },
+              location: { index: 3 }
+            }
+          }
+        ];
+      } else if (template === 'meeting') {
+        formTitle = 'myRecovery 12-Step Meeting Review Log';
+        documentTitle = 'Meeting Review Survey';
+        updateRequests = [
+          {
+            createItem: {
+              item: {
+                title: 'What was the exact name or group of the meeting?',
+                questionItem: {
+                  question: {
+                    required: true,
+                    textQuestion: { paragraph: false }
+                  }
+                }
+              },
+              location: { index: 0 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'Fellowship Format & Key Focus',
+                questionItem: {
+                  question: {
+                    required: true,
+                    choiceQuestion: {
+                      type: 'RADIO',
+                      options: [
+                        { value: 'Discussion style' },
+                        { value: 'Speaker story presentation' },
+                        { value: 'Big Book or literature reading' },
+                        { value: 'Step / Tradition focus' }
+                      ]
+                    }
+                  }
+                }
+              },
+              location: { index: 1 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'How connected and safe did you find this meeting environment?',
+                questionItem: {
+                  question: {
+                    required: true,
+                    choiceQuestion: {
+                      type: 'RADIO',
+                      options: [
+                        { value: 'Excellent - high connection, strong fellowship' },
+                        { value: 'Good - standard welcoming environment' },
+                        { value: 'Neutral - small attendance, quiet crowd' },
+                        { value: 'Isolated - did not feel welcome / unsafe' }
+                      ]
+                    }
+                  }
+                }
+              },
+              location: { index: 2 }
+            }
+          },
+          {
+            createItem: {
+              item: {
+                title: 'What was the primary speaker takeaway or message of hope?',
+                questionItem: {
+                  question: {
+                    textQuestion: { paragraph: true }
+                  }
+                }
+              },
+              location: { index: 3 }
+            }
+          }
+        ];
+      } else {
+        // General / Wellness
+        formTitle = 'myRecovery Reflections & Daily Check-In';
+        documentTitle = 'myRecovery Daily Check-In';
+        updateRequests = [
           {
             createItem: {
               item: {
@@ -823,7 +980,31 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
               location: { index: 2 }
             }
           }
-        ]
+        ];
+      }
+
+      // Step A: Create standard Form
+      const resCreate = await fetch('https://forms.googleapis.com/v1/forms', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          info: {
+            title: formTitle,
+            documentTitle: documentTitle
+          }
+        })
+      });
+      if (!resCreate.ok) throw new Error('Failed to instantiate Form');
+      const formObj = await resCreate.json();
+      const formId = formObj.formId;
+      const responderUri = formObj.responderUri;
+
+      // Step B: Set up questions in a batch update
+      const updateData = {
+        requests: updateRequests
       };
 
       const resBatch = await fetch(`https://forms.googleapis.com/v1/forms/${formId}:batchUpdate`, {
@@ -841,6 +1022,7 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
       setGeneratedFormUrl(responderUri);
       localStorage.setItem('myrecovery_saved_form_id', formId);
       localStorage.setItem('myrecovery_saved_form_url', responderUri);
+      localStorage.setItem('myrecovery_saved_form_template', template);
       
       setSuccessMsg('Your custom Google Form was generated successfully!');
       fetchFormResponses(token, formId);
@@ -861,6 +1043,40 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
       setFormResponses(data.responses || []);
     } catch (error) {
       console.warn('Form responses fetch failed:', error);
+    }
+  };
+
+  const handleAnalyzeResponses = async () => {
+    if (!token || !generatedFormId || formResponses.length === 0) return;
+    setAnalysisLoading(true);
+    setErrorMsg('');
+    setFormAnalysis('');
+    try {
+      const response = await fetch('/api/ai/analyze-responses', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          responses: formResponses,
+          formTitle: selectedFormTemplate === 'sponsor' 
+                     ? 'Sponsor Check-In Form' 
+                     : selectedFormTemplate === 'meeting' 
+                     ? 'Meeting Review Log' 
+                     : 'Wellness Check-in'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate response analysis.');
+      }
+
+      const data = await response.json();
+      setFormAnalysis(data.analysis || 'No detailed patterns found.');
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Failed to complete wellness study.');
+    } finally {
+      setAnalysisLoading(false);
     }
   };
 
@@ -1113,6 +1329,17 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
               }`}
             >
               <CheckSquare size={13} /> Daily Checklist & Forums
+            </button>
+
+            <button
+              onClick={() => setActiveTab('forms')}
+              className={`px-4 py-3 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2 ${
+                activeTab === 'forms' 
+                  ? 'bg-violet-600/10 text-violet-400 border-b-2 border-violet-500' 
+                  : 'text-slate-400 hover:text-slate-205'
+              }`}
+            >
+              <FileText size={13} /> Google Forms Wellness Checklist
             </button>
 
             <button
@@ -1464,149 +1691,235 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
                 </div>
 
               </div>
+            </div>
+          )}
 
-              {/* 3. GOOGLE FORMS REFLECTION GENERATOR */}
-              <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-violet-500/10 rounded-2xl text-violet-500 border border-violet-500/10">
-                      <FileText size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black text-white uppercase tracking-wider">Google Forms Wellness Checklist</h3>
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Automated Survey Reflections</p>
-                    </div>
-                  </div>
-
-                  {generatedFormId && (
-                    <button
-                      onClick={() => fetchFormResponses(token, generatedFormId)}
-                      disabled={formsLoading}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-400 rounded-xl flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer"
-                    >
-                      <RefreshCw size={10} className={formsLoading ? 'animate-spin' : ''} />
-                      Fetch Responses
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <p className="text-xs text-slate-400 leading-relaxed font-semibold">
-                      Deploy a dedicated Google Check-In Form to evaluate craving levels, monitor well-being logs, and store structured reflection sheets directly in your Google Drive.
-                    </p>
-
-                    {!generatedFormId ? (
-                      <button
-                        onClick={handleCreateWellnessForm}
-                        disabled={formsLoading}
-                        className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-violet-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {formsLoading ? (
-                          <span className="animate-spin inline-block w-4 h-4 border-2 border-violet-200 border-t-white rounded-full" />
-                        ) : (
-                          <>
-                            <Plus size={16} /> Deploy Check-In Form
-                          </>
-                        )}
-                      </button>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="bg-slate-950 p-4 border border-slate-800 rounded-2xl flex flex-col justify-between items-start gap-2">
-                          <div className="w-full flex justify-between items-center text-[8px] font-black text-slate-500 uppercase tracking-widest">
-                            <span>Form Active Link</span>
-                            <span className="text-emerald-500 flex items-center gap-0.5">
-                              <Check size={8} className="stroke-[3]" /> Live
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 truncate w-full font-bold">{generatedFormUrl}</p>
-                          
-                          <div className="w-full flex gap-2 pt-1 border-t border-slate-800 mt-2">
-                            <a 
-                              href={generatedFormUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-center text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1 transition-all"
-                            >
-                              Fill Form <ExternalLink size={10} />
-                            </a>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(generatedFormUrl);
-                                setSuccessMsg('Form link copied to clipboard!');
-                                setTimeout(() => setSuccessMsg(''), 3000);
-                              }}
-                              className="p-2.5 bg-slate-950 hover:bg-slate-800 text-slate-400 rounded-xl transition-all border border-slate-800"
-                            >
-                              <Clipboard size={14} />
-                            </button>
-                          </div>
+              {/* TAB CONTENT - GOOGLE FORMS WELLNESS REFLECTION ENGINE */}
+              {activeTab === 'forms' && (
+                <div className="space-y-8 animate-fade-in w-full">
+                  <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-violet-500/10 rounded-2xl text-violet-500 border border-violet-500/10">
+                          <FileText size={22} />
                         </div>
-                        
+                        <div>
+                          <h3 className="text-base font-black text-white uppercase tracking-wider">Google Forms Well-being Hub</h3>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 font-mono">Deploy Personal Forms & Deep-Review Metrics</p>
+                        </div>
+                      </div>
+
+                      {generatedFormId && (
                         <button
-                          onClick={() => {
-                            const safetyConf = window.confirm("Are you sure you want to deploy a brand new evaluation form? This will orphan your existing dashboard links.");
-                            if (safetyConf) {
-                              handleCreateWellnessForm();
-                            }
-                          }}
-                          className="w-full py-2 bg-transparent hover:bg-slate-800/40 text-[9px] text-slate-500 hover:text-slate-300 font-bold uppercase tracking-widest rounded-lg transition-all border border-dashed border-slate-800"
+                          onClick={() => fetchFormResponses(token!, generatedFormId)}
+                          disabled={formsLoading}
+                          className="px-4 py-2 bg-slate-850 hover:bg-slate-750 text-slate-300 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border border-slate-805"
                         >
-                          Regenerate New Form Setup
+                          <RefreshCw size={12} className={formsLoading ? 'animate-spin' : ''} />
+                          Fetch Responses
                         </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* LIVE FORM DASHBOARD FEED */}
-                  <div className="bg-slate-950/40 p-5 border border-slate-800/80 rounded-[2rem] flex flex-col justify-between h-full min-h-[180px]">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                        <span>Google Forms Status</span>
-                        <span>{formResponses.length} Responses</span>
-                      </div>
-
-                      {generatedFormId ? (
-                        formResponses.length > 0 ? (
-                          <div className="space-y-3 max-h-[150px] overflow-y-auto pr-1">
-                            {formResponses.slice(0, 3).map((resp, i) => {
-                              const subTime = resp.lastSubmittedTime ? new Date(resp.lastSubmittedTime) : null;
-                              return (
-                                <div key={resp.responseId || i} className="p-3 bg-slate-900 border border-slate-800/40 rounded-xl space-y-1">
-                                  <div className="flex justify-between items-center text-[8px] font-black text-slate-500">
-                                    <span className="text-violet-400">Response #{formResponses.length - i}</span>
-                                    <span>{subTime ? subTime.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently'}</span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-300 font-bold leading-relaxed">
-                                    Completed Check-In evaluated from Google Forms.
-                                  </p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="py-6 text-center space-y-1">
-                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest leading-none">Awaiting Submissions</p>
-                            <p className="text-[9px] text-slate-500 font-semibold max-w-[200px] mx-auto leading-relaxed pt-1">
-                              No responses found in Google Forms yet. Click 'Fill Form' above and fill out a submission, then click 'Fetch Responses'.
-                            </p>
-                          </div>
-                        )
-                      ) : (
-                        <div className="py-8 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                          Form is Inactive
-                        </div>
                       )}
                     </div>
 
-                    <div className="text-[8px] text-slate-500 font-bold leading-normal pt-2 border-t border-slate-900 uppercase">
-                      Google Drive Form submissions will appear in this reflection history.
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Left: Creations / Templates Selector */}
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-black text-violet-400 uppercase tracking-widest font-mono">Select Assessment Template</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Provision custom assessment sheets directly into your personal Google Workspace account. Use them for your own reflection logs or distribute links directly to sponsees and recovery support peers in Spokane!
+                          </p>
+                        </div>
+
+                        <div className="space-y-5">
+                          <div className="space-y-2">
+                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block px-1">Template Scheme</label>
+                            <select
+                              value={selectedFormTemplate}
+                              onChange={(e) => setSelectedFormTemplate(e.target.value as any)}
+                              className="w-full bg-slate-950 border border-slate-800 px-4 py-3 rounded-2xl text-xs text-slate-200 font-bold focus:outline-none"
+                            >
+                              <option value="general">Daily Progress & Mental Outlook Tracker</option>
+                              <option value="sponsor">Sponsor-Sponsee Accountability Logs</option>
+                              <option value="meeting">12-Step Meeting Review Survey</option>
+                            </select>
+                          </div>
+
+                          {/* Display Template Question Preview */}
+                          <div className="bg-slate-950/60 p-4 border border-slate-850 rounded-2xl space-y-3">
+                            <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Questions Included in Deployment:</div>
+                            <ul className="space-y-2 text-[11px] font-semibold text-slate-400 pl-1.5 list-disc list-inside">
+                              {selectedFormTemplate === 'general' && (
+                                <>
+                                  <li>Outlook Check: "How is your mental/emotional outlook today?" (Radio Options)</li>
+                                  <li>Habits Tracker: "Did you complete critical recovery routines?" (Checkboxes)</li>
+                                  <li>Victoria log: "Share thoughts, barriers, or victories." (Paragraph Text)</li>
+                                </>
+                              )}
+                              {selectedFormTemplate === 'sponsor' && (
+                                <>
+                                  <li>Craving Index: "Cravings intensity level today?" (Radio 1-5 range)</li>
+                                  <li>Support Network: "Did you contact your Sponsor/Peers today?" (Radio Options)</li>
+                                  <li>Active Practices: "Which recovery work was completed?" (Checkboxes)</li>
+                                  <li>Prayer/Needs: "Accountability notes, prayer requests." (Paragraph Text)</li>
+                                </>
+                              )}
+                              {selectedFormTemplate === 'meeting' && (
+                                <>
+                                  <li>Meeting details: "What was the name/group of the meeting?" (Text Response)</li>
+                                  <li>Program Format: "Fellowship format & key focus?" (Radio Options)</li>
+                                  <li>Vibe: "How connected and safe was the meeting atmosphere?" (Radio Options)</li>
+                                  <li>Key takeaway: "Speaker summary or message of hope?" (Paragraph Text)</li>
+                                </>
+                              )}
+                            </ul>
+                          </div>
+
+                          <button
+                            onClick={() => handleCreateWellnessForm()}
+                            disabled={formsLoading}
+                            className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-lg shadow-violet-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            {formsLoading ? (
+                              <span className="animate-spin inline-block w-4 h-4 border-2 border-violet-200 border-t-white rounded-full" />
+                            ) : (
+                              <>
+                                <Plus size={16} /> Deploy & Bind Google Form
+                              </>
+                            )}
+                          </button>
+
+                          {generatedFormId && (
+                            <div className="bg-slate-950 p-4 border border-slate-850 rounded-2xl space-y-3">
+                              <div className="w-full flex justify-between items-center text-[8px] font-black text-slate-500 uppercase tracking-widest">
+                                <span>Active Survey Link</span>
+                                <span className="text-emerald-500 flex items-center gap-0.5 font-bold">
+                                  <Check size={8} className="stroke-[3]" /> Bound & Live
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 truncate w-full font-bold bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-850">{generatedFormUrl}</p>
+                              
+                              <div className="flex gap-2">
+                                <a 
+                                  href={generatedFormUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex-1 py-3 bg-violet-600/10 hover:bg-violet-600 text-violet-400 hover:text-white rounded-xl text-center text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border border-violet-500/20"
+                                >
+                                  Open Google Form <ExternalLink size={11} />
+                                </a>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(generatedFormUrl);
+                                    setSuccessMsg('Form link copied to clipboard!');
+                                    setTimeout(() => setSuccessMsg(''), 3000);
+                                  }}
+                                  className="p-3 bg-slate-950 hover:bg-slate-850 text-slate-400 rounded-xl transition-all border border-slate-800 cursor-pointer"
+                                >
+                                  <Clipboard size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Frame: Live responses & analysis */}
+                      <div className="bg-slate-950/40 p-6 border border-slate-850 rounded-[2rem] flex flex-col justify-between space-y-6 h-full">
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-900 pb-3">
+                            <span>Check-In Submissions</span>
+                            <span className="text-violet-400 font-mono font-bold">{formResponses.length} Responses</span>
+                          </div>
+
+                          {generatedFormId ? (
+                            formResponses.length > 0 ? (
+                              <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                                {formResponses.map((resp, i) => {
+                                  const subTime = resp.lastSubmittedTime ? new Date(resp.lastSubmittedTime) : null;
+                                  
+                                  const getResponseAnswers = (responseObj: any) => {
+                                    if (!responseObj.answers) return [];
+                                    return Object.values(responseObj.answers).map((ansObj: any) => {
+                                      const ansList = ansObj.textAnswers?.answers || [];
+                                      return ansList.map((a: any) => a.value).join(', ');
+                                    }).filter(Boolean);
+                                  };
+
+                                  const answers = getResponseAnswers(resp);
+
+                                  return (
+                                    <div key={resp.responseId || i} className="p-4 bg-slate-900/95 border border-slate-805 rounded-2xl space-y-2.5 hover:border-slate-750 transition-colors">
+                                      <div className="flex justify-between items-center text-[8.5px] font-mono font-black text-slate-500">
+                                        <span className="text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded border border-violet-500/10 font-bold">REP #{formResponses.length - i}</span>
+                                        <span>{subTime ? subTime.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently'}</span>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {answers.map((answerStr, index) => (
+                                          <p key={index} className="text-[11px] text-slate-350 font-semibold leading-relaxed pl-2 border-l-2 border-violet-500/40">
+                                            {answerStr}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="py-12 text-center space-y-3">
+                                <span className="text-2xl">⏳</span>
+                                <p className="text-xs text-slate-400 font-black uppercase tracking-widest leading-none">Awaiting Submissions</p>
+                                <p className="text-[10px] text-slate-500 font-semibold max-w-[240px] mx-auto leading-relaxed pt-1.5">
+                                  No submissions found in this custom Google Form yet. Press the 'Open Google Form' link above, submit a check-in, and click 'Fetch Responses'.
+                                </p>
+                              </div>
+                            )
+                          ) : (
+                            <div className="py-16 text-center text-slate-650 text-xs font-black uppercase tracking-widest font-mono">
+                              Form is currently inactive
+                            </div>
+                          )}
+                        </div>
+
+                        {generatedFormId && formResponses.length > 0 && (
+                          <div className="pt-4 border-t border-slate-900 space-y-4">
+                            <button
+                              onClick={handleAnalyzeResponses}
+                              disabled={analysisLoading}
+                              className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-black text-[11px] uppercase tracking-widest rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              {analysisLoading ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin" /> Analyzing Wellbeing Logs...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={13} className="text-amber-300 animate-pulse" /> ✨ Analyze Submissions with Gemini AI
+                                </>
+                              )}
+                            </button>
+
+                            {formAnalysis && (
+                              <div className="p-5 bg-slate-900 border border-violet-500/20 rounded-2xl text-slate-300 text-[11px] font-semibold leading-relaxed space-y-3 max-h-[300px] overflow-y-auto">
+                                <div className="text-[9px] font-black text-violet-400 uppercase tracking-widest border-b border-slate-850 pb-2 flex items-center gap-1.5 font-mono">
+                                  <Sparkles size={11} className="text-violet-400 animate-pulse" /> SOBER SPOKANE COACH REPORT
+                                </div>
+                                <div className="markdown-body text-slate-350 bg-transparent">
+                                  <ReactMarkdown>{formAnalysis || ''}</ReactMarkdown>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="text-[8px] text-slate-500 font-bold leading-normal pt-2 select-none uppercase text-center font-mono">
+                          Form replies are fetched and parsed directly from the Google Forms API.
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )}
 
           {/* TAB CONTENT - SOBRIETY JOURNAL (DRIVE & DOCS) */}
           {activeTab === 'drive' && (

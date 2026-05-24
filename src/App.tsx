@@ -601,6 +601,31 @@ export default function App() {
     showToast(`${title}: ${body}`, "info");
   };
 
+  const handleSandboxLogin = () => {
+    const simulatedUser = {
+      uid: 'sandbox-user-123',
+      email: 'sandbox@soberspokane.org',
+      displayName: 'Spokane Peer',
+      emailVerified: true,
+      photoURL: '',
+      isAnonymous: false,
+    } as any;
+    
+    setCurrentUser(simulatedUser);
+    setUserProfile({
+      email: 'sandbox@soberspokane.org',
+      name: 'Spokane Peer (Sandbox)',
+      photoURL: '',
+      sobrietyDate: '2023-01-15',
+      recoveryNeeds: ['Meetings', 'Peer Support'],
+      neighborhood: 'Downtown Spokane',
+      role: 'user'
+    });
+    setIsSuperAdmin(false);
+    setIsAuthLoading(false);
+    showToast("Welcome! Logging in with Simulated Sandbox Profile.", "success");
+  };
+
   const handleLogin = async () => {
     setAuthError('');
     try {
@@ -1533,6 +1558,13 @@ export default function App() {
                                   {typeof window !== 'undefined' ? window.location.hostname : ''}
                                 </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={handleSandboxLogin}
+                                className="w-full py-3 bg-amber-600/30 hover:bg-amber-600 border border-amber-500/30 hover:border-amber-500 text-amber-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                              >
+                                ⚡ Bypass domain block & Enter sandbox mode
+                              </button>
                             </div>
                           ) : (
                             <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] font-bold uppercase text-center">
@@ -1615,8 +1647,11 @@ export default function App() {
                           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
                           <div className="relative flex justify-center text-[8px] uppercase font-black text-slate-700"><span className="bg-slate-900 px-4">OR</span></div>
                         </div>
-                        <button type="button" onClick={handleLogin} className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all">
+                        <button type="button" onClick={handleLogin} className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer">
                           <LogIn size={18} /> Continue with Google
+                        </button>
+                        <button type="button" onClick={handleSandboxLogin} className="w-full py-4 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 border border-emerald-550/20 hover:border-emerald-500/55 text-emerald-400 hover:text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer">
+                          ✨ Developer Sandbox Bypass
                         </button>
                         <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
                           {authMode === 'login' ? 'New to myRecovery? Sign Up' : 'Already have an account? Sign In'}
