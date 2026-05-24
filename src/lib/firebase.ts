@@ -3,6 +3,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
 const firebaseConfig = {
@@ -54,6 +55,34 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
+
+// Dynamically initialize App Check, turning on the Debug Provider when running inside local/sandbox hostnames
+if (typeof window !== 'undefined') {
+  try {
+    const hostname = window.location.hostname;
+    if (
+      hostname.includes('localhost') || 
+      hostname.includes('ais-dev') || 
+      hostname.includes('ais-pre') || 
+      hostname.includes('run.app')
+    ) {
+      // Configure a stable, custom debug token so you only need to register it ONCE in the Firebase Console.
+      (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "405a29ce-e558-4918-b3f2-01fa8cf1292a";
+      console.log('[Firebase App Check] Development/Sandbox host detected. Activating Debug Token Provider.');
+      console.log('[Firebase App Check] Static Debug Token configured: 405a29ce-e558-4918-b3f2-01fa8cf1292a');
+      console.log('[Firebase App Check] Register this exact token inside Firebase Console > App Check > Apps > Manage debug tokens.');
+    }
+    
+    const recaptchaKey = '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag';
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+    console.log('[Firebase App Check] Subsystem initialized successfully.');
+  } catch (err) {
+    console.warn('[Firebase App Check] Initialization bypassed/failed (expected if App Check is disabled/unavailable):', err);
+  }
+}
 
 export { onMessage };
 
