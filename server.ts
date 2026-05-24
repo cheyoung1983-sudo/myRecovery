@@ -25,15 +25,15 @@ async function startServer() {
   // API Routes
   app.post("/api/recaptcha/verify", async (req, res) => {
     try {
-      const { token, action = "submit" } = req.body;
+      const { token, action = "submit", siteKey } = req.body;
       if (!token) {
         return res.status(400).json({ error: "Missing token parameter." });
       }
 
       const projectID = "gen-lang-client-0922849103";
-      const recaptchaKey = "6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag";
+      const recaptchaKey = siteKey || "6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag";
 
-      console.log(`[reCAPTCHA] Received request to verify token for action: ${action}`);
+      console.log(`[reCAPTCHA] Received request to verify token for action: ${action} with siteKey: ${recaptchaKey}`);
 
       let client;
       try {

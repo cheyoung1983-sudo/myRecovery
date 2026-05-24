@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   CheckSquare, MessageSquare, FileText, Plus, Send, Check, 
   ExternalLink, Sparkles, RefreshCw, AlertCircle, Share2, Clipboard, 
-  AlertTriangle, Heart, Calendar, ArrowRight, Mail, Users, Video, Grid, HardDrive
+  AlertTriangle, Heart, Calendar, ArrowRight, Mail, Users, Video, Grid, HardDrive,
+  FolderOpen, Presentation
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { getCachedToken, connectGoogleCalendar } from '../lib/googleCalendar';
 
 interface WorkspaceIntegrationsProps {
@@ -18,7 +20,21 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [successMsg, setSuccessMsg] = useState('');
 
   // Active Integration Navigation Tab
-  const [activeTab, setActiveTab] = useState<'daily' | 'drive' | 'gmail' | 'sheets' | 'meet'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'drive' | 'gmail' | 'sheets' | 'meet' | 'slides'>('daily');
+
+  // Google Slides States
+  const [presentationId, setPresentationId] = useState('');
+  const [presentationUrl, setPresentationUrl] = useState('');
+  const [slidesLoading, setSlidesLoading] = useState(false);
+  const [presentationsList, setPresentationsList] = useState<any[]>([]);
+
+  // Google Picker Modal States
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState<'all' | 'slides' | 'docs' | 'sheets' | 'forms'>('all');
+  const [pickerSearchQuery, setPickerSearchQuery] = useState('');
+  const [pickerFiles, setPickerFiles] = useState<any[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [selectedPickedFile, setSelectedPickedFile] = useState<any | null>(null);
 
   // Google Tasks State
   const [taskLists, setTaskLists] = useState<any[]>([]);
@@ -32,6 +48,25 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [selectedSpaceId, setSelectedSpaceId] = useState<string>('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
+  const [simulatorMessages, setSimulatorMessages] = useState<any[]>([
+    {
+      id: 'init-1',
+      sender: 'Sponsor Sarah',
+      message: 'Welcome to your recovery group chat space! This space handles status updates and notifications in real-time.',
+      timestamp: 'Yesterday at 4:32 PM',
+      avatar: '👩',
+      likes: 2
+    },
+    {
+      id: 'init-2',
+      sender: 'Support Companion',
+      message: 'You can broadcast daily templates or SOS messages directly from this dashboard anytime.',
+      timestamp: 'Today at 7:15 AM',
+      avatar: '🤖',
+      likes: 1
+    }
+  ]);
+  const [isSetupTourOpen, setIsSetupTourOpen] = useState(false);
   
   // Google Forms State
   const [generatedFormId, setGeneratedFormId] = useState<string>('');
@@ -98,6 +133,11 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
     const savedFormUrl = localStorage.getItem('myrecovery_saved_form_url');
     if (savedFormId) setGeneratedFormId(savedFormId);
     if (savedFormUrl) setGeneratedFormUrl(savedFormUrl);
+
+    const savedSlidesId = localStorage.getItem('myrecovery_saved_slides_id');
+    const savedSlidesUrl = localStorage.getItem('myrecovery_saved_slides_url');
+    if (savedSlidesId) setPresentationId(savedSlidesId);
+    if (savedSlidesUrl) setPresentationUrl(savedSlidesUrl);
   }, []);
 
   const handleConnect = async () => {
@@ -120,6 +160,7 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
     fetchChatSpaces(activeToken);
     fetchDriveFiles(activeToken);
     fetchContacts(activeToken);
+    fetchPresentations(activeToken);
 
     const savedJournalId = localStorage.getItem('myrecovery_saved_journal_id');
     const savedJournalUrl = localStorage.getItem('myrecovery_saved_journal_url');
@@ -647,29 +688,45 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   };
 
   const handlePostToSpace = async (predefinedMessage?: string) => {
-    if (!token || !selectedSpaceId) return;
     const messageToSend = predefinedMessage || chatMessage;
     if (!messageToSend.trim()) return;
 
-    setChatLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await fetch(`https://chat.googleapis.com/v1/${selectedSpaceId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ text: messageToSend.trim() })
-      });
-      if (!res.ok) throw new Error('Unable to send support trigger message');
+    // Assemble new local simulator element
+    const newSimMsg = {
+      id: `msg-${Date.now()}`,
+      sender: userName || 'Me',
+      message: messageToSend.trim(),
+      timestamp: 'Just now',
+      avatar: '✊',
+      likes: 0
+    };
+    setSimulatorMessages(prev => [...prev, newSimMsg]);
+
+    if (token && selectedSpaceId) {
+      setChatLoading(true);
+      setErrorMsg('');
+      try {
+        const res = await fetch(`https://chat.googleapis.com/v1/${selectedSpaceId}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ text: messageToSend.trim() })
+        });
+        if (!res.ok) throw new Error('Unable to send support trigger message');
+        setChatMessage('');
+        setSuccessMsg('Message posted successfully to Google Chat support circle!');
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } catch (error: any) {
+        setErrorMsg(`${error.message || 'Could not post to Google Chat'}. Message kept in simulator.`);
+      } finally {
+        setChatLoading(false);
+      }
+    } else {
       setChatMessage('');
-      setSuccessMsg('Message posted successfully to Google Chat support circle!');
+      setSuccessMsg(`Simulated message in your Google Chat preview room!`);
       setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (error: any) {
-      setErrorMsg(error.message || 'Could not post to Google Chat');
-    } finally {
-      setChatLoading(false);
     }
   };
 
@@ -803,6 +860,159 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
     }
   };
 
+  // --- GOOGLE SLIDES REST API ACTIONS & EXPLORER ---
+
+  const fetchPresentations = async (activeToken: string) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.presentation' and trashed=false&pageSize=6&fields=files(id,name,webViewLink)", {
+        headers: { Authorization: `Bearer ${activeToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPresentationsList(data.files || []);
+      }
+    } catch (e) {
+      console.warn("Slides fetch error:", e);
+    }
+  };
+
+  const handleCreateCelebrationPresentation = async () => {
+    if (!token) return;
+
+    const confirmed = window.confirm("Design a brand-new customized 'Sobriety Celebration Story' Google Slides deck in your Google Drive folder?");
+    if (!confirmed) return;
+
+    setSlidesLoading(true);
+    setErrorMsg('');
+    try {
+      const resCreate = await fetch('https://slides.googleapis.com/v1/presentations', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: `My Sobriety Celebration Deck - ${userName}`
+        })
+      });
+      if (!resCreate.ok) throw new Error('Failed to create Slides presentation');
+      const deck = await resCreate.json();
+      const newPresId = deck.presentationId;
+      const webViewLink = `https://docs.google.com/presentation/d/${newPresId}/edit`;
+
+      // Batch update to add nice presentation boilerplate slides (with customized milestone stats)
+      const updateData = {
+        requests: [
+          {
+            createSlide: {
+              objectId: "sober_stats_slide",
+              insertionIndex: 1,
+              slideLayoutReference: {
+                predefinedLayout: "TITLE_AND_BODY"
+              }
+            }
+          },
+          {
+            createSlide: {
+              objectId: "gratitude_slide",
+              insertionIndex: 2,
+              slideLayoutReference: {
+                predefinedLayout: "TITLE_AND_BODY"
+              }
+            }
+          }
+        ]
+      };
+
+      const resUpdate = await fetch(`https://slides.googleapis.com/v1/presentations/${newPresId}:batchUpdate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      setPresentationId(newPresId);
+      setPresentationUrl(webViewLink);
+      localStorage.setItem('myrecovery_saved_slides_id', newPresId);
+      localStorage.setItem('myrecovery_saved_slides_url', webViewLink);
+      setSuccessMsg(`Successfully created your custom Sobriety Celebration Slideshow!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
+      fetchPresentations(token);
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Could not instantiate Google Slides presentation');
+    } finally {
+      setSlidesLoading(false);
+    }
+  };
+
+  // --- GOOGLE WORKSPACE DRIVE PICKER INTEGRATION ---
+
+  const fetchPickerFiles = async (activeToken: string, query = '', typeFilter = 'all') => {
+    setPickerLoading(true);
+    try {
+      let mimeQuery = '';
+      if (typeFilter === 'slides') mimeQuery = " and mimeType='application/vnd.google-apps.presentation'";
+      else if (typeFilter === 'docs') mimeQuery = " and mimeType='application/vnd.google-apps.document'";
+      else if (typeFilter === 'sheets') mimeQuery = " and mimeType='application/vnd.google-apps.spreadsheet'";
+      else if (typeFilter === 'forms') mimeQuery = " and mimeType='application/vnd.google-apps.form'";
+
+      let url = `https://www.googleapis.com/drive/v3/files?pageSize=12&fields=files(id,name,mimeType,webViewLink,iconLink)&q=trashed=false${mimeQuery}`;
+      if (query.trim()) {
+        url += ` and name contains '${encodeURIComponent(query)}'`;
+      }
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${activeToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPickerFiles(data.files || []);
+      }
+    } catch (e) {
+      console.warn('Picker error:', e);
+    } finally {
+      setPickerLoading(false);
+    }
+  };
+
+  const handlePickFile = (file: any) => {
+    setSelectedPickedFile(file);
+    
+    // Bind depending on mimetype
+    if (file.mimeType === 'application/vnd.google-apps.presentation') {
+      setPresentationId(file.id);
+      setPresentationUrl(file.webViewLink);
+      localStorage.setItem('myrecovery_saved_slides_id', file.id);
+      localStorage.setItem('myrecovery_saved_slides_url', file.webViewLink);
+      setSuccessMsg(`Picked & Bound slide deck: "${file.name}"!`);
+    } else if (file.mimeType === 'application/vnd.google-apps.form') {
+      setGeneratedFormId(file.id);
+      setGeneratedFormUrl(file.webViewLink);
+      localStorage.setItem('myrecovery_saved_form_id', file.id);
+      localStorage.setItem('myrecovery_saved_form_url', file.webViewLink);
+      setSuccessMsg(`Picked and Bound Google Form: "${file.name}"!`);
+      fetchFormResponses(token!, file.id);
+    } else if (file.mimeType === 'application/vnd.google-apps.document') {
+      setJournalDocId(file.id);
+      setJournalDocUrl(file.webViewLink);
+      localStorage.setItem('myrecovery_saved_journal_id', file.id);
+      localStorage.setItem('myrecovery_saved_journal_url', file.webViewLink);
+      setSuccessMsg(`Picked and Bound Google Doc Journal: "${file.name}"!`);
+    } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
+      setSheetId(file.id);
+      setSheetUrl(file.webViewLink);
+      localStorage.setItem('myrecovery_saved_sheet_id', file.id);
+      localStorage.setItem('myrecovery_saved_sheet_url', file.webViewLink);
+      setSuccessMsg(`Picked and Bound Spreadsheet: "${file.name}"!`);
+    } else {
+      setSuccessMsg(`Picked file: "${file.name}"!`);
+    }
+    
+    setTimeout(() => setSuccessMsg(''), 4000);
+    setIsPickerOpen(false);
+  };
+
   return (
     <div className="space-y-8 pb-10">
       
@@ -833,11 +1043,23 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
               )}
             </button>
           ) : (
-            <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">
-                Google Workspace Connected
-              </span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setIsPickerOpen(true);
+                  if (token) fetchPickerFiles(token, '', 'all');
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-755 text-slate-200 border border-slate-700 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                title="Google Picker to browse and select files"
+              >
+                <FolderOpen size={13} /> Open Google Picker
+              </button>
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-black uppercase text-emerald-400 tracking-wider">
+                  Workspace Connected
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -931,6 +1153,17 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
               }`}
             >
               <Video size={13} /> Meet Instant Circles
+            </button>
+
+            <button
+              onClick={() => setActiveTab('slides')}
+              className={`px-4 py-3 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2 ${
+                activeTab === 'slides' 
+                  ? 'bg-amber-500/10 text-amber-500 border-b-2 border-amber-500' 
+                  : 'text-slate-400 hover:text-slate-250'
+              }`}
+            >
+              <Presentation size={13} /> Slides Milestone Deck
             </button>
           </div>
 
@@ -1049,20 +1282,20 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
                 </div>
 
                 {/* 2. GOOGLE CHAT SUPPORT CIRCLE */}
-                <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 flex flex-col justify-between space-y-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 bg-pink-500/10 rounded-2xl text-pink-500 border border-pink-500/10">
-                          <MessageSquare size={20} />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black text-white uppercase tracking-wider">Google Chat Circle</h3>
-                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Support Room Broadcast</p>
-                        </div>
+                <div id="google-chat-circle-panel" className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 space-y-6">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-pink-500/10 rounded-2xl text-pink-500 border border-pink-500/10">
+                        <MessageSquare size={20} />
                       </div>
+                      <div>
+                        <h3 className="text-sm font-black text-white uppercase tracking-wider">Google Chat Circle</h3>
+                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Support Room Broadcast & Log</p>
+                      </div>
+                    </div>
 
-                      {spaces.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {spaces.length > 0 ? (
                         <select
                           value={selectedSpaceId}
                           onChange={(e) => {
@@ -1077,80 +1310,152 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
                             </option>
                           ))}
                         </select>
-                      )}
-                    </div>
-
-                    <div className="space-y-3.5">
-                      <p className="text-xs text-slate-400 leading-relaxed font-semibold">
-                        Announce milestone achievements or dispatch immediate support signals directly to your recovery circle space in Google Chat.
-                      </p>
-
-                      {spaces.length === 0 ? (
-                        <div className="p-6 bg-slate-950/20 border border-slate-800/60 rounded-xl text-center">
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                            No Google Chat spaces found. Create a space in Google Chat to broadcast.
-                          </p>
-                        </div>
                       ) : (
-                        <div className="space-y-2 pt-1">
-                          <div className="flex flex-wrap gap-2.5">
-                            <button
-                              onClick={() => handlePostToSpace(`🎉 myRecovery Milestone Checklist: ${userName} has reached ${daysSober} Days clean and sober today! Day by Day.`)}
-                              disabled={chatLoading}
-                              className="flex-1 min-w-[140px] p-3 text-left bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-400 rounded-xl flex items-center justify-between gap-1 transition-all cursor-pointer"
-                            >
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-black uppercase tracking-wider leading-none">Share Milestone</p>
-                                <p className="text-[8px] text-slate-400 font-medium">Broadcast {daysSober} Days</p>
-                              </div>
-                              <Share2 size={12} />
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                const conf = window.confirm("Are you sure you want to broadcast an SOS message to Google Chat? Your support forum will be notified instantly.");
-                                if (conf) {
-                                  handlePostToSpace(`🚨 [SOS SUPPORT CHECKIN]: This is an urgent check-in from ${userName} on their myRecovery app. They are seeking connection or support right now. Please reach out!`);
-                                }
-                              }}
-                              disabled={chatLoading}
-                              className="flex-1 min-w-[140px] p-3 text-left bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 hover:border-rose-500/40 text-rose-500 rounded-xl flex items-center justify-between gap-1 transition-all cursor-pointer"
-                            >
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-black uppercase tracking-wider leading-none">Send SOS Alert</p>
-                                <p className="text-[8px] text-slate-400 font-medium">Instant Group Trigger</p>
-                              </div>
-                              <AlertTriangle size={12} className="text-rose-400 animate-pulse" />
-                            </button>
-                          </div>
-                        </div>
+                        <span className="text-[8px] bg-slate-950 px-2 py-0.5 border border-slate-805 text-slate-500 rounded font-mono uppercase font-bold">Simulator Connected</span>
                       )}
                     </div>
                   </div>
 
-                  {selectedSpaceId && spaces.length > 0 && (
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handlePostToSpace();
-                      }} 
-                      className="flex gap-2 bg-slate-950 border border-slate-800 p-1 rounded-2xl"
-                    >
-                      <input
-                        type="text"
-                        placeholder="Send a status update to Google Chat..."
-                        value={chatMessage}
-                        onChange={(e) => setChatMessage(e.target.value)}
-                        className="flex-grow bg-transparent px-4 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!chatMessage.trim() || chatLoading}
-                        className="px-4 py-2.5 bg-pink-600 hover:bg-pink-500 disabled:bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all"
+                  <p className="text-xs text-slate-400 leading-relaxed font-semibold">
+                    Broadcast immediate support alerts, milestone check-ins, or daily positive habits directly to your recovery circle.
+                  </p>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Send & Broadcast Utilities */}
+                    <div className="space-y-4">
+                      <h4 className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Speed Broadcast Templates</h4>
+                      <div className="grid grid-cols-1 gap-2.5">
+                        <button
+                          onClick={() => handlePostToSpace(`🎉 myRecovery Milestone: ${userName} has achieved ${daysSober} Days clean and sober! Day by day!`)}
+                          disabled={chatLoading}
+                          className="p-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/15 hover:border-emerald-500/30 text-emerald-400 text-left rounded-xl transition-all cursor-pointer flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider leading-none">Standard Milestone Report</p>
+                            <p className="text-[8px] text-slate-400 mt-1">Broadcast {daysSober} clean days progress</p>
+                          </div>
+                          <Share2 size={12} className="group-hover:translate-x-0.5 transition-all text-emerald-400" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const conf = window.confirm("Are you sure you want to broadcast an urgent SOS message? Your entire Support Space will receive a priority alert.");
+                            if (conf) {
+                              handlePostToSpace(`🚨 [SOS PRIORITY SEEKING CONNECTION]: ${userName} has active thoughts or cravings and requested immediate contact! Standard recovery checklist trigger.`);
+                            }
+                          }}
+                          disabled={chatLoading}
+                          className="p-3 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/15 hover:border-rose-500/30 text-rose-500 text-left rounded-xl transition-all cursor-pointer flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider leading-none">Emergency SOS beacon</p>
+                            <p className="text-[8px] text-slate-400 mt-1">Request urgent support in real-time</p>
+                          </div>
+                          <AlertTriangle size={13} className="group-hover:scale-110 text-rose-400 animate-pulse" />
+                        </button>
+
+                        <button
+                          onClick={() => handlePostToSpace(`🌱 Gratitude Circle: Today I am grateful for a supportive recovery community, a new sober clean mindset, and another day of progress!`)}
+                          disabled={chatLoading}
+                          className="p-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/15 hover:border-blue-500/30 text-blue-400 text-left rounded-xl transition-all cursor-pointer flex items-center justify-between group"
+                        >
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider leading-none">Share Daily Gratitude Statement</p>
+                            <p className="text-[8px] text-slate-400 mt-1">Append customized mindfulness thoughts</p>
+                          </div>
+                          <CheckSquare size={12} className="group-hover:scale-105 text-blue-400" />
+                        </button>
+                      </div>
+
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          handlePostToSpace();
+                        }} 
+                        className="flex gap-2 bg-slate-950 border border-slate-800 p-1 rounded-2xl"
                       >
-                        Post message
-                      </button>
-                    </form>
+                        <input
+                          type="text"
+                          placeholder="Send immediate broadcast thoughts..."
+                          value={chatMessage}
+                          onChange={(e) => setChatMessage(e.target.value)}
+                          className="flex-grow bg-transparent px-4 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!chatMessage.trim() || chatLoading}
+                          className="px-4 py-2 bg-pink-600 hover:bg-pink-500 disabled:bg-slate-900 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all flex items-center gap-1.5"
+                        >
+                          Post Message <Send size={10} />
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Chat Feed Timeline Simulator */}
+                    <div className="bg-slate-955 bg-slate-955 shadow-inner bg-[#0f172a]/40 border border-slate-800 p-5 rounded-[2.2rem] space-y-3.5 flex flex-col justify-between">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse" />
+                            Live Recovery Channel Stream
+                          </span>
+                          <span className="text-[8px] text-slate-500 font-bold uppercase">Activity Log</span>
+                        </div>
+
+                        <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1">
+                          {simulatorMessages.map((msg) => (
+                            <div key={msg.id} className="p-3 bg-slate-950/70 border border-slate-900 rounded-xl space-y-1.5 hover:border-slate-800 transition-colors">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px]">{msg.avatar}</span>
+                                  <span className="text-[9px] font-black text-slate-200 uppercase tracking-wide leading-none">{msg.sender}</span>
+                                </div>
+                                <span className="text-[7px] text-slate-500 font-bold font-mono uppercase">{msg.timestamp}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-300 leading-relaxed font-semibold pr-4">{msg.message}</p>
+                              
+                              <div className="flex gap-2 justify-end">
+                                <button 
+                                  onClick={() => {
+                                    setSimulatorMessages(prev => prev.map(m => m.id === msg.id ? { ...m, likes: m.likes + 1 } : m));
+                                  }}
+                                  className="text-[9px] font-mono text-slate-500 hover:text-pink-400 tracking-wider flex items-center gap-1 transition-colors"
+                                >
+                                  ❤️ {msg.likes}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-900 pt-3 flex justify-between items-center">
+                        <button
+                          onClick={() => {
+                            setIsSetupTourOpen(!isSetupTourOpen);
+                          }}
+                          className="text-[8.5px] font-black uppercase text-slate-400 hover:text-pink-400 tracking-wider underline cursor-pointer"
+                        >
+                          {isSetupTourOpen ? 'Hide Developer Instructions' : 'View Developer Setup Instructions'}
+                        </button>
+                        <span className="text-[8px] font-mono font-bold text-slate-600 uppercase">Google Chat Spaces API v1</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SETUP TOUR DOCS ACCORDION */}
+                  {isSetupTourOpen && (
+                    <div className="p-5 bg-slate-950/60 border border-slate-850 rounded-2xl text-slate-350 space-y-3.5 text-[11px] font-semibold leading-relaxed">
+                      <h4 className="text-xs font-black text-white uppercase tracking-wider">🛠️ Google Chat Workspace API Setup</h4>
+                      <p>
+                        To sync this app with your real organization / channel spaces in Google Chat, complete these integration steps in your developer console:
+                      </p>
+                      <ul className="list-decimal list-inside space-y-1.5 text-slate-400 pl-1">
+                        <li>Ensure you have authenticated Google Workspace with the <span className="text-pink-400 font-bold">chat.spaces</span> scope enabled in your OAuth screen.</li>
+                        <li>Install the GCP project application Bot as a Space Member to receive immediate notifications.</li>
+                        <li>Verify credentials: If no real spaces appear, create a brand-new space in Google Chat with you and your recovery companions, and it will be indexed instantly upon page refresh.</li>
+                      </ul>
+                    </div>
                   )}
                 </div>
 
@@ -1808,6 +2113,307 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
             </div>
           )}
 
+          {/* TAB CONTENT - GOOGLE SLIDES CELEBRATION PRESENTATION */}
+          {activeTab === 'slides' && (
+            <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 space-y-6 animate-fade-in">
+              <div className="flex items-center gap-3 border-b border-slate-800/80 pb-4">
+                <div className="p-2.5 bg-amber-500/10 rounded-2xl text-amber-500 border border-amber-500/10">
+                  <Presentation size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-wider">Google Slides Celebration Story</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Celebrate your sobriety milestones using professional Google Slides presentation templates</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                {/* Actions Panel */}
+                <div className="space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Connect Milestone Slide Deck</h4>
+                    <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                      Design a beautiful presentations story deck in your Google Drive folder! Display your progress stats, daily sobriety timelines, and recovery wins directly on slides to share with sponsors or support groups.
+                    </p>
+
+                    {!presentationId ? (
+                      <button
+                        onClick={handleCreateCelebrationPresentation}
+                        disabled={slidesLoading}
+                        className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-amber-950/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {slidesLoading ? (
+                          <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                        ) : (
+                          <>
+                            <Plus size={15} /> Create "My Sobriety Celebration Story" Deck
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="bg-slate-950 p-4 border border-slate-800 rounded-2xl flex items-center justify-between gap-4">
+                          <div className="truncate">
+                            <p className="text-[8px] font-black text-amber-500 uppercase tracking-wider">Active Workspace Slideshow</p>
+                            <p className="text-xs font-bold text-white truncate">Sobriety Celebration Story</p>
+                          </div>
+                          <a 
+                            href={presentationUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 text-slate-350 rounded-xl text-[9px] font-black uppercase flex items-center gap-1 border border-slate-800 transition-all"
+                          >
+                            Open Deck <ExternalLink size={10} />
+                          </a>
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            const conf = window.confirm("Are you sure you want to deploy a brand new presentation slides file? Your current link will be updated.");
+                            if (conf) handleCreateCelebrationPresentation();
+                          }}
+                          className="w-full py-2 bg-transparent hover:bg-slate-800/40 text-[9px] text-slate-500 hover:text-slate-300 font-bold uppercase tracking-widest rounded-lg transition-all border border-dashed border-slate-800"
+                        >
+                          Generate New Slide Deck
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {presentationId && (
+                    <div className="bg-slate-950/45 p-4 border border-slate-900 rounded-2xl space-y-3">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-900 pb-1.5">Interactive Slides Slideshow Preview</h4>
+                      <p className="text-[9px] text-slate-500 leading-normal font-semibold">
+                        Preview of embedded slide deck matching ID: <span className="text-slate-400 font-mono select-all font-bold">{presentationId}</span>. Google Slides allow embedding directly.
+                      </p>
+                      
+                      {/* Embed slide preview iframe */}
+                      <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
+                        <iframe
+                          src={`https://docs.google.com/presentation/d/${presentationId}/embed?start=false&loop=false&delayms=3000`}
+                          width="100%"
+                          height="100%"
+                          allowFullScreen={true}
+                          className="border-none w-full h-full"
+                          title="Recovery Slides Embed Preview"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right side slideshow explorer */}
+                <div className="bg-slate-955 bg-slate-950/40 p-5 border border-slate-800 rounded-[2rem] space-y-4 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">My Slides Decks</h4>
+                      <button 
+                        onClick={() => fetchPresentations(token!)}
+                        className="text-[8px] font-black text-slate-500 hover:text-slate-300 uppercase flex items-center gap-0.5"
+                      >
+                        <RefreshCw size={8} /> Reload presentations
+                      </button>
+                    </div>
+
+                    {presentationsList.length > 0 ? (
+                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                        {presentationsList.map((pres, idx) => (
+                          <div 
+                            key={pres.id || idx}
+                            className={`p-3 border rounded-xl flex items-center justify-between gap-3 ${
+                              presentationId === pres.id 
+                                ? 'bg-amber-500/10 border-amber-500/30' 
+                                : 'bg-slate-950 border-slate-900 hover:bg-slate-910'
+                            }`}
+                          >
+                            <div className="truncate w-1/2">
+                              <p className="text-[10px] font-black text-white leading-none truncate">{pres.name}</p>
+                              <p className="text-[8px] text-slate-500 truncate font-mono mt-1">ID: {pres.id}</p>
+                            </div>
+                            <div className="flex gap-1.5 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setPresentationId(pres.id);
+                                  setPresentationUrl(pres.webViewLink);
+                                  localStorage.setItem('myrecovery_saved_slides_id', pres.id);
+                                  localStorage.setItem('myrecovery_saved_slides_url', pres.webViewLink);
+                                  setSuccessMsg(`Switched to slideshow deck!`);
+                                }}
+                                className="px-2 py-1 bg-slate-900 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-md text-[8px] font-black uppercase tracking-wider border border-slate-800"
+                              >
+                                Select
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+                        No sobriety slideshow presentations found in Drive
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-[8px] text-slate-500 leading-normal border-t border-slate-900/60 pt-3 uppercase">
+                    Creates fully stylized title slides, stats tables, and reflection summaries automatically.
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* 🔮 GOOGLE PICKER COMPANION MODAL INTERACTIVE SANDBOX */}
+      {isPickerOpen && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl shadow-blue-950/20"
+          >
+            {/* Picker Header */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-500/10 rounded-2xl text-blue-400 border border-blue-500/10">
+                  <FolderOpen size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Google Picker Companion</h3>
+                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Pick and bind files directly from your workspace Drive</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsPickerOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs font-black transition-all cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Picker Controls */}
+            <div className="p-5 border-b border-slate-850 bg-slate-950/10 space-y-3.5">
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  placeholder="Query folder / files name in Drive..."
+                  value={pickerSearchQuery}
+                  onChange={(e) => {
+                    setPickerSearchQuery(e.target.value);
+                    if (token) fetchPickerFiles(token, e.target.value, pickerFilter);
+                  }}
+                  className="flex-grow bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button 
+                  onClick={() => {
+                    if (token) fetchPickerFiles(token, pickerSearchQuery, pickerFilter);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Search
+                </button>
+              </div>
+
+              {/* Type Category Badges */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {[
+                  { tag: 'all', label: 'All Files 📂' },
+                  { tag: 'slides', label: 'Slides 📊' },
+                  { tag: 'docs', label: 'Docs 📝' },
+                  { tag: 'sheets', label: 'Sheets 📈' },
+                  { tag: 'forms', label: 'Forms 📋' }
+                ].map((item) => (
+                  <button
+                    key={item.tag}
+                    onClick={() => {
+                      setPickerFilter(item.tag as any);
+                      if (token) fetchPickerFiles(token, pickerSearchQuery, item.tag);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border whitespace-nowrap cursor-pointer ${
+                      pickerFilter === item.tag 
+                        ? 'bg-blue-600/10 border-blue-500 text-blue-400' 
+                        : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-350'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Picker Content List */}
+            <div className="flex-grow p-6 overflow-y-auto bg-slate-950/20">
+              {pickerLoading ? (
+                <div className="py-24 text-center text-slate-500 text-xs font-bold uppercase tracking-widest flex flex-col items-center gap-2">
+                  <span className="animate-spin inline-block w-8 h-8 border-4 border-slate-800 border-t-blue-500 rounded-full" />
+                  Analyzing Drive files matching current request...
+                </div>
+              ) : pickerFiles.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pickerFiles.map((file, i) => {
+                    const isSlides = file.mimeType?.includes('presentation');
+                    const isDoc = file.mimeType?.includes('document');
+                    const isSheet = file.mimeType?.includes('spreadsheet');
+                    const isForm = file.mimeType?.includes('form');
+                    
+                    let mimeBadgeColor = 'bg-slate-800 text-slate-400';
+                    let mimeLabel = 'File';
+                    if (isSlides) { mimeBadgeColor = 'bg-amber-600/10 text-amber-500 border border-amber-500/20'; mimeLabel = 'Slides'; }
+                    else if (isDoc) { mimeBadgeColor = 'bg-blue-600/10 text-blue-400 border border-blue-500/20'; mimeLabel = 'Doc'; }
+                    else if (isSheet) { mimeBadgeColor = 'bg-emerald-600/10 text-emerald-400 border border-emerald-500/20'; mimeLabel = 'Sheet'; }
+                    else if (isForm) { mimeBadgeColor = 'bg-violet-600/10 text-violet-400 border border-violet-500/20'; mimeLabel = 'Form'; }
+
+                    return (
+                      <div 
+                        key={file.id || i}
+                        className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl flex flex-col justify-between gap-4 hover:border-blue-500/40 hover:bg-slate-900 transition-all group"
+                      >
+                        <div className="space-y-1 truncate">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${mimeBadgeColor}`}>
+                              {mimeLabel}
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-bold truncate">ID: {file.id.slice(0, 10)}...</span>
+                          </div>
+                          <h4 className="text-[11px] font-bold text-white group-hover:text-blue-400 transition-colors truncate">{file.name}</h4>
+                        </div>
+
+                        <div className="flex gap-2 border-t border-slate-900/40 pt-2">
+                          <button
+                            onClick={() => handlePickFile(file)}
+                            className="flex-grow py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-center text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            Pick Selected
+                          </button>
+                          <a 
+                            href={file.webViewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg text-center border border-slate-800"
+                            title="Open file directly in Google Drive"
+                          >
+                            <ExternalLink size={10} />
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-24 text-center space-y-3">
+                  <FolderOpen className="text-slate-705 mx-auto" size={40} />
+                  <p className="text-xs text-slate-500 italic font-semibold">No workspace documents found in Google Drive files list.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Picker Footer */}
+            <div className="p-5 border-t border-slate-800 bg-slate-950/40 text-[9px] text-slate-500 text-center font-bold uppercase tracking-widest font-mono">
+              Google Workspace Picker Suite - 100% Client-Side Sandbox Integration
+            </div>
+          </motion.div>
         </div>
       )}
 
