@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, connectAuthEmulator } from 'firebase/auth';
+import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp, connectFirestoreEmulator } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
@@ -55,6 +55,32 @@ export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
+
+// Connect to local emulators if hosted on localhost or explicitly requested via environment variables
+if (typeof window !== 'undefined') {
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const forceEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
+  
+  if (isLocalhost || forceEmulators) {
+    try {
+      // Connect to auth emulator (e.g. port 1999 as recommended by the user config)
+      const authPort = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_PORT || '1999';
+      connectAuthEmulator(auth, `http://localhost:${authPort}`, { disableWarnings: true });
+      console.log(`[Firebase Emulator] Dynamic link established with Auth Emulator at port ${authPort}`);
+    } catch (err) {
+      console.warn('[Firebase Emulator] Auth emulator link bypassed:', err);
+    }
+    
+    try {
+      const firestorePort = parseInt(import.meta.env.VITE_FIREBASE_FIRESTORE_EMULATOR_PORT || '8080', 10);
+      connectFirestoreEmulator(db, 'localhost', firestorePort);
+      console.log(`[Firebase Emulator] Dynamic link established with Firestore Emulator at port ${firestorePort}`);
+    } catch (err) {
+      console.warn('[Firebase Emulator] Firestore emulator link bypassed:', err);
+    }
+  }
+}
+
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar');
 googleProvider.addScope('https://www.googleapis.com/auth/userinfo.profile');

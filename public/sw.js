@@ -31,10 +31,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests and skip firestore/analytics
-  if (event.request.method !== 'GET' || 
-      event.request.url.includes('firestore.googleapis.com') ||
-      event.request.url.includes('google-analytics.com')) {
+  // Only cache GET requests and bypass api endpoints, googleapis, analytics, or firebase
+  if (
+    event.request.method !== 'GET' || 
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('firestore.googleapis.com') ||
+    event.request.url.includes('google-analytics.com') ||
+    event.request.url.includes('firebase')
+  ) {
     return;
   }
 
@@ -53,6 +57,9 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return response;
+      }).catch((err) => {
+        console.warn('[Service Worker] Fetch exception bypassed for:', event.request.url, err);
+        throw err;
       });
     })
   );
