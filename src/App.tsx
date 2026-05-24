@@ -626,6 +626,53 @@ export default function App() {
     showToast("Welcome! Logging in with Simulated Sandbox Profile.", "success");
   };
 
+  const parseAuthError = (e: any): string => {
+    if (!e) return "An unknown authentication error occurred.";
+    const errCode = e.code || '';
+    const errMsg = e.message || '';
+    const errStr = String(e || '');
+
+    if (
+      errCode === 'auth/recaptcha-verify-failed' || 
+      errMsg.includes('recaptcha') || 
+      errStr.includes('recaptcha')
+    ) {
+      return 'recaptcha-verify-failed';
+    }
+
+    if (
+      errCode === 'auth/internal-error' || 
+      errMsg.includes('internal-error') || 
+      errMsg.includes('cross-origin') || 
+      errMsg.includes('iframe')
+    ) {
+      return 'iframe-restrictions';
+    }
+
+    if (
+      errCode.includes('requests-from-referer') || 
+      errMsg.includes('requests-from-referer') || 
+      errStr.includes('requests-from-referer') ||
+      errCode.includes('referer') || 
+      errMsg.includes('referer') || 
+      errStr.includes('referer') ||
+      errMsg.includes('are-blocked') ||
+      errStr.includes('are-blocked')
+    ) {
+      return 'gcp-referer-blocked';
+    }
+
+    if (
+      errCode === 'auth/unauthorized-domain' || 
+      errMsg.includes('unauthorized-domain') || 
+      errCode === 'auth/unauthorized-client'
+    ) {
+      return 'unauthorized-domain';
+    }
+
+    return errMsg || errCode || String(e);
+  };
+
   const handleLogin = async () => {
     setAuthError('');
     try {
@@ -636,20 +683,7 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("Google login error:", e);
-      const errCode = e.code || '';
-      const errMsg = e.message || '';
-      if (
-        errCode === 'auth/internal-error' || 
-        errMsg.includes('internal-error') || 
-        errMsg.includes('cross-origin') || 
-        errMsg.includes('iframe')
-      ) {
-        setAuthError('iframe-restrictions');
-      } else if (errCode === 'auth/unauthorized-domain' || errMsg.includes('unauthorized-domain') || errCode === 'auth/unauthorized-client' || errMsg.includes('requests-from-referer') || errCode.includes('referer')) {
-        setAuthError('unauthorized-domain');
-      } else {
-        setAuthError(errMsg || "Failed to sign in with Google.");
-      }
+      setAuthError(parseAuthError(e));
     }
   };
 
@@ -667,13 +701,7 @@ export default function App() {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: any) {
       console.error("Email login error:", e);
-      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
-        setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
-        setAuthError('unauthorized-domain');
-      } else {
-        setAuthError(e.message);
-      }
+      setAuthError(parseAuthError(e));
     }
   };
 
@@ -693,13 +721,7 @@ export default function App() {
       setResetSent(true);
     } catch (e: any) {
       console.error("Signup error:", e);
-      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
-        setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
-        setAuthError('unauthorized-domain');
-      } else {
-        setAuthError(e.message);
-      }
+      setAuthError(parseAuthError(e));
     }
   };
 
@@ -711,13 +733,7 @@ export default function App() {
       setResetSent(true);
     } catch (e: any) {
       console.error("Password reset error:", e);
-      if (e.code === 'auth/recaptcha-verify-failed' || e.message?.includes('recaptcha')) {
-        setAuthError('recaptcha-verify-failed');
-      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
-        setAuthError('unauthorized-domain');
-      } else {
-        setAuthError(e.message);
-      }
+      setAuthError(parseAuthError(e));
     }
   };
 
@@ -1581,6 +1597,35 @@ export default function App() {
                                   ✨ Enter via Sandbox bypass
                                 </button>
                               </div>
+                            </div>
+                          ) : authError === 'gcp-referer-blocked' ? (
+                            <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-left space-y-3">
+                              <div className="flex items-center gap-2 text-amber-500">
+                                <AlertCircle size={16} className="shrink-0" />
+                                <p className="text-[10px] font-black uppercase tracking-wider">GCP API Referer Blocked</p>
+                              </div>
+                              <p className="text-[10px] text-slate-300 font-medium leading-relaxed">
+                                The Google Cloud Platform API Key used by Firebase has <strong>HTTP referrer restrictions</strong> that blocks requests originating from this dynamic sandbox or localhost hostname.
+                              </p>
+                              <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">How to authorize & resolve:</p>
+                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1 font-semibold">
+                                  <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">GCP Credentials Console</a></li>
+                                  <li>Click on the entry under <strong>API Keys</strong> that belongs to your app (usually titled "Browser key")</li>
+                                  <li>Under <strong>Application restrictions</strong>, ensure you either:</li>
+                                  <ul className="list-disc list-inside pl-3 text-slate-500 space-y-0.5 font-medium text-[8px]">
+                                    <li>Add <code className="text-white font-mono bg-slate-950 px-1 rounded">*.run.app</code> and <code className="text-white font-mono bg-slate-950 px-1 rounded">localhost</code> to the allowed websites.</li>
+                                    <li>Or temporarily set Website restrictions to <strong className="text-white">"None"</strong> to preview successfully.</li>
+                                  </ul>
+                                </ol>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleSandboxLogin}
+                                className="w-full py-3 bg-emerald-600/30 hover:bg-emerald-600 border border-emerald-555/20 text-emerald-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                              >
+                                ⚡ Bypass domain block & Enter sandbox mode
+                              </button>
                             </div>
                           ) : authError === 'unauthorized-domain' ? (
                             <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-left space-y-3">
