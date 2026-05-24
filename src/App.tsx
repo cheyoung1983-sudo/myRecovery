@@ -636,10 +636,19 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("Google login error:", e);
-      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain') || e.code === 'auth/unauthorized-client' || e.message?.includes('requests-from-referer') || e.code?.includes('referer')) {
+      const errCode = e.code || '';
+      const errMsg = e.message || '';
+      if (
+        errCode === 'auth/internal-error' || 
+        errMsg.includes('internal-error') || 
+        errMsg.includes('cross-origin') || 
+        errMsg.includes('iframe')
+      ) {
+        setAuthError('iframe-restrictions');
+      } else if (errCode === 'auth/unauthorized-domain' || errMsg.includes('unauthorized-domain') || errCode === 'auth/unauthorized-client' || errMsg.includes('requests-from-referer') || errCode.includes('referer')) {
         setAuthError('unauthorized-domain');
       } else {
-        setAuthError(e.message || "Failed to sign in with Google.");
+        setAuthError(errMsg || "Failed to sign in with Google.");
       }
     }
   };
@@ -1536,6 +1545,41 @@ export default function App() {
                                 <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 font-mono text-[9px] text-blue-400 select-all truncate text-center">
                                   {typeof window !== 'undefined' ? window.location.hostname : ''}
                                 </div>
+                              </div>
+                            </div>
+                          ) : authError === 'iframe-restrictions' ? (
+                            <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-left space-y-3">
+                              <div className="flex items-center gap-2 text-amber-500">
+                                <AlertCircle size={16} className="shrink-0" />
+                                <p className="text-[10px] font-black uppercase tracking-wider">Iframe Storage Blocked</p>
+                              </div>
+                              <p className="text-[10px] text-slate-300 font-medium leading-relaxed">
+                                Browser cross-origin security rules are blocking Google popup authentication inside this preview iframe. Let's redirect you or bypass seamlessly!
+                              </p>
+                              <div className="space-y-1.5 pt-2 border-t border-slate-805">
+                                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">Choose an option:</p>
+                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1 font-semibold">
+                                  <li>Click <strong className="text-white">"Open in a new tab"</strong> at the top right of your preview window to login directly, OR</li>
+                                  <li>Click the button below to open a direct standalone window, OR</li>
+                                  <li>Enter instantly using the Developer Sandbox Bypass!</li>
+                                </ol>
+                              </div>
+                              <div className="flex flex-col gap-1.5 pt-2">
+                                <a
+                                  href={typeof window !== 'undefined' ? window.location.href : '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all text-center flex items-center justify-center gap-1"
+                                >
+                                  🔗 Open Standalone Tab
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={handleSandboxLogin}
+                                  className="w-full py-2.5 bg-emerald-600/30 hover:bg-emerald-600 border border-emerald-550/20 text-emerald-400 hover:text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                                >
+                                  ✨ Enter via Sandbox bypass
+                                </button>
                               </div>
                             </div>
                           ) : authError === 'unauthorized-domain' ? (

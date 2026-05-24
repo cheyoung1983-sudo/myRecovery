@@ -4,7 +4,11 @@ import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc,
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
-import firebaseConfigJson from '../../firebase-applet-config.json';
+const configFiles = import.meta.glob('../../firebase-applet-config*.json', { eager: true });
+const configKeys = Object.keys(configFiles);
+const firebaseConfigJson: any = configKeys.length > 0 
+  ? ((configFiles[configKeys[0]] as any).default || (configFiles[configKeys[0]] as any)) 
+  : {};
 
 const firebaseConfig = {
   apiKey: firebaseConfigJson.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || '',

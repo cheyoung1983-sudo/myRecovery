@@ -36,8 +36,20 @@ export const connectGoogleCalendar = async (): Promise<string> => {
       return credential.accessToken;
     }
     throw new Error('No access token returned from Google Auth');
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error connecting Google Calendar:', error);
+    const errMsg = error?.message || String(error || '');
+    const errCode = error?.code || '';
+    if (
+      errCode.includes('internal-error') || 
+      errMsg.includes('auth/internal-error') || 
+      errMsg.includes('internal-error') || 
+      errMsg.includes('cross-origin') || 
+      errMsg.includes('iframe')
+    ) {
+      const customErr = new Error('Iframe Cross-Origin Storage Restriction: Your browser blocked the auth popup due to third-party cookie restrictions inside the iframe. Please click the "Open in a new tab" button at the top-right of the preview and try again!');
+      throw customErr;
+    }
     throw error;
   }
 };
