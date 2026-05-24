@@ -27,6 +27,11 @@ export interface Sponsor {
   status: 'pending' | 'verified' | 'rejected';
   verifiedAt?: any;
   verifiedBy?: string;
+  // Demographic and alignment features for matching
+  gender?: 'male' | 'female' | 'non-binary' | 'other';
+  fellowship?: 'AA' | 'NA' | 'Celebrate Recovery' | 'Al-Anon' | 'Other';
+  style?: 'rigorous' | 'gentle' | 'balanced' | 'flexible';
+  ageGroup?: 'under_25' | '25_40' | '40_60' | 'over_60';
 }
 
 export interface AttendanceRecord {
@@ -100,6 +105,14 @@ export interface UserProfile {
   emergencyMentorId?: string;
   points?: number;
   badges?: string[];
+  // Recovery demographics & sponsor matching preferences
+  gender?: 'male' | 'female' | 'non-binary' | 'other';
+  sponsorPreference?: 'male' | 'female' | 'same-gender' | 'no-preference' | 'other';
+  primaryFellowship?: 'AA' | 'NA' | 'Celebrate Recovery' | 'Al-Anon' | 'Other';
+  currentStep?: string; // e.g. "Step 1", "Step 12"
+  sponsorshipStyle?: 'rigorous' | 'gentle' | 'balanced' | 'flexible';
+  ageGroup?: 'under_25' | '25_40' | '40_60' | 'over_60';
+  preferredContact?: 'chat' | 'phone' | 'in-person';
 }
 
 export interface SpokaneResource {

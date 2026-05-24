@@ -11,7 +11,8 @@ import {
   UserCheck, Clock, ShieldCheck, Info, Accessibility,
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
   LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
-  Smile, Frown, Meh, AlertCircle, Check, BookOpen, RefreshCw
+  Smile, Frown, Meh, AlertCircle, Check, BookOpen, RefreshCw,
+  Compass, Bookmark
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -149,7 +150,11 @@ const INITIAL_SPONSORS: any[] = [
     bio: "Walking this path since 2012. I specialize in dual-diagnosis recovery and trauma-informed support.",
     neighborhood: "South Hill",
     isVerified: true,
-    status: 'verified'
+    status: 'verified',
+    gender: 'female',
+    fellowship: 'AA',
+    style: 'gentle',
+    ageGroup: '40_60'
   },
   { 
     id: "2", 
@@ -159,7 +164,11 @@ const INITIAL_SPONSORS: any[] = [
     bio: "Focusing on the solution. Available for morning check-ins and structured step work.",
     neighborhood: "Valley",
     isVerified: true,
-    status: 'verified'
+    status: 'verified',
+    gender: 'male',
+    fellowship: 'AA',
+    style: 'rigorous',
+    ageGroup: '25_40'
   },
   {
     id: "3",
@@ -169,7 +178,11 @@ const INITIAL_SPONSORS: any[] = [
     bio: "Focuses on dual-diagnosis and trauma recovery.",
     neighborhood: "North Side",
     isVerified: false,
-    status: 'pending'
+    status: 'pending',
+    gender: 'male',
+    fellowship: 'NA',
+    style: 'balanced',
+    ageGroup: '40_60'
   },
   {
     id: "4",
@@ -179,7 +192,11 @@ const INITIAL_SPONSORS: any[] = [
     bio: "Active in the downtown community. Happy to help newcomers find their footing.",
     neighborhood: "Downtown",
     isVerified: true,
-    status: 'verified'
+    status: 'verified',
+    gender: 'male',
+    fellowship: 'NA',
+    style: 'flexible',
+    ageGroup: '25_40'
   }
 ];
 
@@ -1080,26 +1097,73 @@ export default function App() {
       .filter(s => s.status === 'verified')
       .map(s => {
         let score = 0;
-        // Specialty Match (Primary)
+        
+        // --- 1. SPECIALTY ALIGNMENT ---
         needs.forEach(need => { 
           if (s.specialties.some(spec => spec.toLowerCase().includes(need.toLowerCase()) || need.toLowerCase().includes(spec.toLowerCase()))) {
             score += 4; 
           }
         });
         
-        // Neighborhood Proximity
+        // --- 2. NEIGHBORHOOD PROXIMITY ---
         if (userProfile?.neighborhood && s.neighborhood === userProfile.neighborhood) {
           score += 5;
         }
 
-        // Experience Bonus
+        // --- 3. SAFETY BOUNDARY MATCHING (CRITICAL GENDER SETTINGS) ---
+        if (userProfile?.sponsorPreference && userProfile?.gender && s.gender) {
+          const pref = userProfile.sponsorPreference;
+          const userGen = userProfile.gender;
+          const sponGen = s.gender;
+
+          if (pref === 'same-gender') {
+            if (userGen === sponGen) {
+              score += 8; // Major safety boundary alignment bonus
+            } else {
+              score -= 15; // Filter/heavy penalty for gender boundary violation
+            }
+          } else if (pref === 'male') {
+            if (sponGen === 'male') score += 5;
+            else score -= 15;
+          } else if (pref === 'female') {
+            if (sponGen === 'female') score += 5;
+            else score -= 15;
+          }
+        }
+
+        // --- 4. FELLOWSHIP / PROGRAM CURRICULUM ALIGNMENT ---
+        if (userProfile?.primaryFellowship && s.fellowship) {
+          if (userProfile.primaryFellowship === s.fellowship) {
+            score += 6; // Major alignment of curriculum (e.g., both AA or both NA)
+          } else {
+            score -= 2; // Slight penalty for differing programs (helps prioritize right fellowship)
+          }
+        }
+
+        // --- 5. MENTORSHIP STYLE SYNERGY ---
+        if (userProfile?.sponsorshipStyle && s.style) {
+          if (userProfile.sponsorshipStyle === s.style) {
+            score += 4; // Mentorship style synergy (e.g., both Rigorous or Gentle)
+          } else {
+            score += 1; // Base compatibility
+          }
+        }
+
+        // --- 6. AGE GROUP / LIFE STAGE PROXIMITY ---
+        if (userProfile?.ageGroup && s.ageGroup) {
+          if (userProfile.ageGroup === s.ageGroup) {
+            score += 3; // Life stage proximity bonus
+          }
+        }
+
+        // --- 7. SPONSOR EXPERIENCE LEVEL ---
         if (s.years >= 10) score += 3;
         else if (s.years >= 5) score += 2;
         else if (s.years >= 2) score += 1;
 
         return { sponsor: s, score };
       })
-      .filter(m => m.score > 2)
+      .filter(m => m.score > 2) // Filter out incompatible matches
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
   }, [sponsors, userNeeds, userProfile]);
@@ -1562,19 +1626,22 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                <div className="bg-slate-800/20 rounded-[2rem] border border-slate-800 p-8 space-y-8">
+                <div className="bg-slate-800/10 rounded-[2.5rem] border border-slate-800/80 p-8 space-y-10">
+                  
+                  {/* Community Identity & Anonymity */}
                   <div className="space-y-6">
                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">Community Identity</h3>
-                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Display Alias</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-1">Display Alias (Anonymous Mask)</label>
                         <input 
                           type="text" 
                           value={userProfile?.alias || ''}
                           onChange={(e) => handleUpdateProfile({ alias: e.target.value })}
                           placeholder={userProfile?.name?.split(' ')[0]}
-                          className="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl text-sm text-white focus:border-blue-500 outline-none"
+                          className="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl text-sm text-white focus:border-blue-500 outline-none transition-all"
                         />
+                        <span className="text-[9px] text-slate-600 block mt-1 px-1 italic">This keeps you anonymous when interacting on Spokane feeds & group check-ins.</span>
                       </div>
                       {userProfile?.role === 'mentor' && (
                         <div className="flex items-center justify-between p-4 bg-rose-500/5 border border-rose-500/10 rounded-2xl">
@@ -1593,18 +1660,202 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Sobriety Goalposts */}
                   <div className="space-y-6">
-                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><MapPin size={14} /> My Neighborhood</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {['Downtown', 'South Hill', 'North Side', 'Valley', 'West Plains', 'Airway Heights'].map(n => (
-                        <button key={n} onClick={() => handleUpdateNeighborhood(n)} className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all ${userProfile?.neighborhood === n ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-500'}`}>{n}</button>
-                      ))}
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Clock size={14} /> Sobriety Milestone Base</h3>
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Sober Anniversary Date</label>
+                      <input 
+                        type="date" 
+                        value={sobrietyDate} 
+                        onChange={(e) => handleUpdateSobrietyDate(e.target.value)} 
+                        className="w-full bg-slate-950 border border-slate-800 p-4 rounded-xl text-center font-bold text-white shadow-inner focus:border-blue-500 outline-none" 
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 mb-4 flex items-center gap-2"><Clock size={14} /> Recovery Progress</h3>
-                    <input type="date" value={sobrietyDate} onChange={(e) => handleUpdateSobrietyDate(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl text-center font-bold text-white shadow-sm" />
+                  {/* Home Neighborhood */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><MapPin size={14} /> Spokane Location Home</h3>
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Select Active District</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['Downtown', 'South Hill', 'North Side', 'Valley', 'West Central', 'Hillyard', 'Cheney'].map(n => (
+                          <button 
+                            key={n} 
+                            onClick={() => handleUpdateNeighborhood(n)} 
+                            className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all cursor-pointer ${
+                              userProfile?.neighborhood === n 
+                                ? 'bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-900/40 scale-[1.02]' 
+                                : 'bg-slate-950 border-slate-850 text-slate-500 hover:border-slate-750'
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Specialty Needs & Support Multi-select */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Heart size={14} /> Priority Support Subjects</h3>
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                      <div className="grid grid-cols-2 gap-2">
+                        {RECOVERY_NEEDS.map(need => {
+                          const isSel = (userProfile?.recoveryNeeds || []).includes(need);
+                          return (
+                            <button
+                              key={need}
+                              onClick={() => {
+                                const current = userProfile?.recoveryNeeds || [];
+                                const updated = current.includes(need) 
+                                  ? current.filter(x => x !== need) 
+                                  : [...current, need];
+                                handleUpdateProfile({ recoveryNeeds: updated });
+                              }}
+                              className={`py-3 px-4 rounded-xl border text-[9px] font-black uppercase tracking-widest flex items-center justify-between transition-all cursor-pointer ${
+                                isSel 
+                                  ? 'bg-emerald-600/15 border-emerald-500/50 text-emerald-400 shadow-inner'
+                                  : 'bg-slate-950 border-slate-850 text-slate-550 hover:border-slate-800'
+                              }`}
+                            >
+                              {need}
+                              {isSel ? <Check size={14} className="text-emerald-400" /> : <div className="w-3.5 h-3.5 rounded-full border border-slate-800" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Demographics & Matching Filters */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Compass size={14} /> Safety Boundaries & Demographics</h3>
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-6 text-left">
+                      
+                      {/* Your Gender */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block px-1">Your Gender Profile</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {(['male', 'female', 'non-binary', 'other'] as const).map(g => (
+                            <button
+                              key={g}
+                              onClick={() => handleUpdateProfile({ gender: g })}
+                              className={`py-3 px-1 text-[10px] font-black rounded-xl uppercase border text-center transition-all cursor-pointer ${
+                                userProfile?.gender === g 
+                                  ? 'bg-blue-600 border-blue-400 text-white' 
+                                  : 'bg-slate-950 border-slate-850 text-slate-500 hover:bg-slate-900'
+                              }`}
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Sponsor Target Preference */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block px-1">Target Sponsor Preference</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {(['same-gender', 'male', 'female', 'no-preference'] as const).map(p => (
+                            <button
+                              key={p}
+                              onClick={() => handleUpdateProfile({ sponsorPreference: p })}
+                              className={`py-3 px-1 text-[9px] font-black rounded-xl uppercase border text-center transition-all cursor-pointer ${
+                                userProfile?.sponsorPreference === p 
+                                  ? 'bg-emerald-600 border-emerald-400 text-white' 
+                                  : 'bg-slate-950 border-slate-850 text-slate-500 hover:bg-slate-900'
+                              }`}
+                            >
+                              {p.replace('-', ' ')}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-[9px] text-slate-500 block leading-tight px-1 italic">Matching traditional recovery boundaries (Same-Gender is highly encouraged for healthy relationship parameters).</span>
+                      </div>
+
+                      {/* Age Group */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block px-1">Life Stage Age Bracket</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {(['under_25', '25_40', '40_60', 'over_60'] as const).map(age => (
+                            <button
+                              key={age}
+                              onClick={() => handleUpdateProfile({ ageGroup: age })}
+                              className={`py-3 px-1 text-[10px] font-black rounded-xl uppercase border text-center transition-all cursor-pointer ${
+                                userProfile?.ageGroup === age 
+                                  ? 'bg-blue-600 border-blue-400 text-white' 
+                                  : 'bg-slate-950 border-slate-850 text-slate-500 hover:bg-slate-900'
+                              }`}
+                            >
+                              {age.replace('_', '-')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Program Alignment */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Bookmark size={14} /> Fellowship Alignment & Sponsor Style</h3>
+                    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-[2rem] space-y-6 text-left">
+                      
+                      {/* Fellowship */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block px-1">Primary Recovery Program Curriculum</label>
+                        <div className="grid grid-cols-5 gap-2">
+                          {(['AA', 'NA', 'Celebrate Recovery', 'Al-Anon', 'Other'] as const).map(fellow => (
+                            <button
+                              key={fellow}
+                              onClick={() => handleUpdateProfile({ primaryFellowship: fellow })}
+                              className={`py-3 px-1 text-[8px] font-black rounded-xl uppercase border text-center transition-all cursor-pointer ${
+                                userProfile?.primaryFellowship === fellow 
+                                  ? 'bg-emerald-600 border-emerald-400 text-white' 
+                                  : 'bg-slate-950 border-slate-850 text-slate-550 hover:bg-slate-900'
+                              }`}
+                            >
+                              {fellow === 'Celebrate Recovery' ? 'CR' : fellow}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Step Scope & Style selectors */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block px-1">Step Scope</label>
+                          <select
+                            value={userProfile?.currentStep || 'Step 1'}
+                            onChange={(e) => handleUpdateProfile({ currentStep: e.target.value })}
+                            className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-[10px] font-bold text-white outline-none focus:border-emerald-500"
+                          >
+                            <option value="Exploring">Exploring Steps</option>
+                            <option value="Step 1-3">Steps 1-3</option>
+                            <option value="Step 4-7">Steps 4-7</option>
+                            <option value="Step 8-9">Steps 8-9</option>
+                            <option value="Step 10-12">Steps 10-12</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block px-1">Mentorship style Preference</label>
+                          <select
+                            value={userProfile?.sponsorshipStyle || 'balanced'}
+                            onChange={(e) => handleUpdateProfile({ sponsorshipStyle: e.target.value as any })}
+                            className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-[10px] font-bold text-white outline-none focus:border-emerald-500"
+                          >
+                            <option value="rigorous">Rigorous / Structured</option>
+                            <option value="gentle">Gentle / Encouraging</option>
+                            <option value="balanced">Balanced Synergy</option>
+                            <option value="flexible">Flexible / Check-Ins Only</option>
+                          </select>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -1816,6 +2067,13 @@ export default function App() {
       </div>
 
       <AnimatePresence>
+        {currentUser && userProfile && incompleteProfile && (
+          <ProfileOnboarding 
+            user={currentUser} 
+            profile={userProfile} 
+            onComplete={() => {}} 
+          />
+        )}
         {isGroundingActive && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
             <div className="w-full max-w-sm relative">
