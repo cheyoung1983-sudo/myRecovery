@@ -7,6 +7,20 @@ import { RecaptchaEnterpriseServiceClient } from "@google-cloud/recaptcha-enterp
 // Load Spokane resources to provide context to Gemini
 import { SPOKANE_RESOURCES } from "./src/constants";
 
+function mapGeminiError(error: any): string {
+  const errMsg = error?.message || String(error || "");
+  if (
+    errMsg.includes("dunning") || 
+    errMsg.includes("PERMISSION_DENIED") || 
+    errMsg.includes("billing") || 
+    errMsg.includes("Lightning dunning decision") ||
+    errMsg.includes("403")
+  ) {
+    return "Sober Spokane AI is currently in offline/maintenance mode due to cloud subscription or gateway limits. Our developers have been notified! Please use the physical Spokane resources, peer mentor direct chats, and meeting finders in the meantime.";
+  }
+  return error?.message || "Failed to generate AI response. Please try again soon.";
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
@@ -146,7 +160,7 @@ async function startServer() {
       res.json({ text: response.text });
     } catch (error: any) {
       console.error("Gemini Error:", error);
-      res.status(500).json({ error: error.message || "Failed to generate AI response" });
+      res.status(500).json({ error: mapGeminiError(error) });
     }
   });
 
@@ -166,7 +180,8 @@ async function startServer() {
 
       res.json({ reflection: response.text });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to generate reflection" });
+      console.error("Reflection Error:", error);
+      res.status(500).json({ error: mapGeminiError(error) });
     }
   });
 
@@ -213,7 +228,7 @@ async function startServer() {
       res.json(JSON.parse(text));
     } catch (error: any) {
       console.error("Match API Error:", error);
-      res.status(500).json({ error: "Failed to match mentors" });
+      res.status(500).json({ error: mapGeminiError(error) });
     }
   });
   
@@ -230,8 +245,9 @@ async function startServer() {
         contents: prompt
       });
       res.json(JSON.parse(result.text.replace(/```json|```/g, '')));
-    } catch (e) {
-      res.status(505).json({ error: "Analysis failed" });
+    } catch (e: any) {
+      console.error("Analyze Mood Error:", e);
+      res.status(505).json({ error: mapGeminiError(e) });
     }
   });
 
@@ -271,7 +287,7 @@ async function startServer() {
       res.json({ analysis: response.text });
     } catch (error: any) {
       console.error("Analyze Responses Error:", error);
-      res.status(500).json({ error: "Failed to assemble AI response assessment." });
+      res.status(500).json({ error: mapGeminiError(error) });
     }
   });
 
@@ -302,7 +318,7 @@ async function startServer() {
       res.json({ text: response.text });
     } catch (error: any) {
       console.error("Literature Search Error:", error);
-      res.status(500).json({ error: "Failed to search literature" });
+      res.status(500).json({ error: mapGeminiError(error) });
     }
   });
 

@@ -117,8 +117,10 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
         })
       });
       const data = await res.json();
-      if (data.text) {
+      if (res.ok && data.text) {
         setMessages(prev => [...prev, { role: 'model', text: data.text }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'model', text: data.error || "I'm having a little trouble connecting. Check your local Spokane resources or reach out to a peer mentor!" }]);
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'model', text: "I'm having a little trouble connecting. Check your local Spokane resources or reach out to a peer mentor!" }]);
