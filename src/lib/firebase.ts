@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, connectAuthEmulator } from 'firebase/auth';
-import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp, connectFirestoreEmulator } from 'firebase/firestore';
+import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp, connectFirestoreEmulator, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
@@ -21,7 +21,7 @@ const firebaseConfig = {
   firestoreDatabaseId: (firebaseConfigJson as any).firestoreDatabaseId || import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || 'default',
 };
 
-const config = {
+export const firebaseAppConfig = {
   apiKey: firebaseConfig.apiKey,
   authDomain: firebaseConfig.authDomain,
   projectId: firebaseConfig.projectId,
@@ -31,7 +31,7 @@ const config = {
   measurementId: firebaseConfig.measurementId,
 };
 
-const app = initializeApp(config);
+const app = initializeApp(firebaseAppConfig);
 
 // Initialize Analytics and dynamically disable collection based on configured meta-data (defaults to false if explicit variable set)
 if (typeof window !== 'undefined') {
@@ -54,6 +54,21 @@ if (typeof window !== 'undefined') {
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
+
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).then(() => {
+    console.log('[Firestore Offline Cache] IndexedDB offline persistence enabled.');
+  }).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('[Firestore Offline Cache] Multiple tabs open. Persistence failed to enable.');
+    } else if (err.code === 'unimplemented') {
+      console.warn('[Firestore Offline Cache] Browser does not support persistence features.');
+    } else {
+      console.warn('[Firestore Offline Cache] Failed to enable persistence:', err);
+    }
+  });
+}
+
 export const auth = getAuth(app);
 
 // Connect to local emulators if hosted on localhost or explicitly requested via environment variables

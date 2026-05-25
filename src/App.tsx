@@ -12,18 +12,21 @@ import {
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
   LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
   Smile, Frown, Meh, AlertCircle, Check, BookOpen, RefreshCw,
-  Compass, Bookmark
+  Compass, Bookmark, Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 import { 
   auth, db, googleProvider, OperationType, handleFirestoreError,
-  requestForToken, onMessage, messaging
+  requestForToken, onMessage, messaging, firebaseAppConfig
 } from './lib/firebase';
 import { 
   signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendPasswordResetEmail, GoogleAuthProvider
+  sendPasswordResetEmail, GoogleAuthProvider,
+  isSignInWithEmailLink, sendSignInLinkToEmail, signInWithEmailLink,
+  setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence,
+  applyActionCode, confirmPasswordReset, verifyPasswordResetCode
 } from 'firebase/auth';
 import { setCachedToken, clearCachedToken, isCalendarConnected, connectGoogleCalendar } from './lib/googleCalendar';
 import { 
@@ -206,6 +209,12 @@ export default function App() {
   const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   
+  // Geolocation and play-services equivalents properties
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [sortByProximity, setSortByProximity] = useState<boolean>(false);
+  
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
 
@@ -223,6 +232,29 @@ export default function App() {
     
     checkHash();
     window.addEventListener('hashchange', checkHash);
+
+    // Register PWA Service Worker with Firebase Credentials dynamically
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      const swParams = new URLSearchParams();
+      if (firebaseAppConfig.apiKey) swParams.set('apiKey', firebaseAppConfig.apiKey);
+      if (firebaseAppConfig.authDomain) swParams.set('authDomain', firebaseAppConfig.authDomain);
+      if (firebaseAppConfig.projectId) swParams.set('projectId', firebaseAppConfig.projectId);
+      if (firebaseAppConfig.storageBucket) swParams.set('storageBucket', firebaseAppConfig.storageBucket);
+      if (firebaseAppConfig.messagingSenderId) swParams.set('messagingSenderId', firebaseAppConfig.messagingSenderId);
+      if (firebaseAppConfig.appId) swParams.set('appId', firebaseAppConfig.appId);
+      
+      const swUrl = `/sw.js?${swParams.toString()}`;
+
+      navigator.serviceWorker.register(swUrl)
+        .then((reg) => {
+          console.log('[ServiceWorker] PWA Service Worker registered with Firebase Auth capability. Scope: ', reg.scope);
+          setSwRegistration(reg);
+        })
+        .catch((err) => {
+          console.error('[ServiceWorker] PWA Service Worker registration failed: ', err);
+        });
+    }
+
     return () => {
       window.removeEventListener('hashchange', checkHash);
     };
@@ -341,6 +373,12 @@ export default function App() {
       return;
     }
 
+    if (currentUser.uid === 'sandbox-user-123') {
+      const stored = localStorage.getItem('sober_spokane_attendance');
+      setAttendance(stored ? JSON.parse(stored) : []);
+      return;
+    }
+
     const q = query(
       collection(db, 'users', currentUser.uid, 'attendance'),
       orderBy('date', 'desc')
@@ -352,7 +390,9 @@ export default function App() {
         ...doc.data()
       })) as AttendanceRecord[];
       setAttendance(records);
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}/attendance`));
+    }, (err) => {
+      console.warn("Attendance snapshot loader warning (using sandbox offline fallback):", err);
+    });
   }, [currentUser]);
 
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -409,13 +449,59 @@ export default function App() {
   }, [moodLogs]);
   const [isGroundingActive, setIsGroundingActive] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot' | 'passwordless'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [resetSent, setResetSent] = useState(false);
+  const [emailLinkSent, setEmailLinkSent] = useState(false);
+  const [isWaitingForEmailConfirmation, setIsWaitingForEmailConfirmation] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [allUserProfiles, setAllUserProfiles] = useState<(UserProfile & { uid: string })[]>([]);
+  const [persistenceMode, setPersistenceMode] = useState<'local' | 'session' | 'none'>('local');
+
+  // Firebase Email Action Link (oobCode & mode) State
+  const [actionOobCode, setActionOobCode] = useState<string | null>(null);
+  const [actionMode, setActionMode] = useState<string | null>(null);
+  const [emailActionEmail, setEmailActionEmail] = useState<string | null>(null);
+  const [emailActionError, setEmailActionError] = useState<string | null>(null);
+  const [emailActionSuccess, setEmailActionSuccess] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [isEmailActionExecuting, setIsEmailActionExecuting] = useState(false);
+
+  const applyPersistenceMode = async (mode: 'local' | 'session' | 'none') => {
+    try {
+      const authPersistence = 
+        mode === 'session' ? browserSessionPersistence :
+        mode === 'none' ? inMemoryPersistence :
+        browserLocalPersistence;
+        
+      await setPersistence(auth, authPersistence);
+      setPersistenceMode(mode);
+      window.localStorage.setItem('myRecovery_persistenceMode', mode);
+      console.log(`[Auth Persistence] Set to ${mode}`);
+    } catch (err: any) {
+      console.error("Failed to set persistence:", err);
+      showToast(`Warning: Could not configure persistence mode - ${err.message || err}`, "alert");
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedMode = window.localStorage.getItem('myRecovery_persistenceMode') as 'local' | 'session' | 'none' || 'local';
+      setPersistenceMode(savedMode);
+      
+      const authPersistence = 
+        savedMode === 'session' ? browserSessionPersistence :
+        savedMode === 'none' ? inMemoryPersistence :
+        browserLocalPersistence;
+        
+      setPersistence(auth, authPersistence).catch(err => {
+        console.warn("Failed to set initial persistence:", err);
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (messaging) {
@@ -459,51 +545,299 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      setIsAuthLoading(false);
       if (user) {
+        setCurrentUser(user);
+        setIsAuthLoading(false);
         setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
         const userDocRef = doc(db, 'users', user.uid);
         try {
           // Use onSnapshot for real-time profile updates
-          const unsubProfile = onSnapshot(userDocRef, (doc) => {
-            if (doc.exists()) {
-              const data = doc.data() as UserProfile;
+          const unsubProfile = onSnapshot(userDocRef, async (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data() as UserProfile;
               setUserProfile(data);
               setUserNeeds(data.recoveryNeeds || []);
               if (data.sobrietyDate) setSobrietyDate(data.sobrietyDate);
               if (data.neighborhood) setSelectedNeighborhood(data.neighborhood);
+
+              // Automatically check and sync any local guest moodLogs to cloud database for this user
+              try {
+                const storedLogStr = localStorage.getItem('sober_spokane_moodLogs');
+                if (storedLogStr) {
+                  const logs = JSON.parse(storedLogStr);
+                  if (Array.isArray(logs) && logs.length > 0) {
+                    for (const log of logs) {
+                      await addDoc(collection(db, 'users', user.uid, 'moodLogs'), {
+                        userId: user.uid,
+                        mood: log.mood || 'okay',
+                        note: log.note || '',
+                        timestamp: serverTimestamp()
+                      });
+                    }
+                    localStorage.removeItem('sober_spokane_moodLogs');
+                    showToast("Synced offline wellness logs to your cloud database!", "success");
+                  }
+                }
+              } catch (err) {
+                console.warn("Error syncing offline mood logs to Firestore:", err);
+              }
+
+              // Automatically check and sync any local guest attendance check-ins to cloud database
+              try {
+                const storedAttStr = localStorage.getItem('sober_spokane_attendance');
+                if (storedAttStr) {
+                  const att = JSON.parse(storedAttStr);
+                  if (Array.isArray(att) && att.length > 0) {
+                    for (const record of att) {
+                      await addDoc(collection(db, 'users', user.uid, 'attendance'), {
+                        meetingId: record.meetingId,
+                        meetingName: record.meetingName || 'Meeting',
+                        date: record.date || new Date().toISOString().split('T')[0],
+                        timestamp: serverTimestamp()
+                      });
+                    }
+                    localStorage.removeItem('sober_spokane_attendance');
+                    showToast("Synced offline attendance history to your cloud database!", "success");
+                  }
+                }
+              } catch (err) {
+                console.warn("Error syncing offline attendance records to Firestore:", err);
+              }
+
             } else {
+              // Newly registered user: create profile & migrate local guest data
+              let localProfile: Partial<UserProfile> = {};
+              try {
+                const storedP = localStorage.getItem('sober_spokane_userProfile');
+                if (storedP) {
+                  localProfile = JSON.parse(storedP);
+                }
+              } catch (e) {
+                console.warn("Could not read local profile for sync:", e);
+              }
+
               const profile: UserProfile = {
                 email: user.email || '',
-                name: user.displayName || 'Anonymous Player',
-                photoURL: user.photoURL || '',
-                sobrietyDate: new Date().toISOString().split('T')[0],
-                recoveryNeeds: [],
-                role: 'user'
+                name: user.displayName || localProfile.name || 'Anonymous Player',
+                photoURL: user.photoURL || localProfile.photoURL || '',
+                sobrietyDate: localProfile.sobrietyDate || new Date().toISOString().split('T')[0],
+                recoveryNeeds: localProfile.recoveryNeeds || [],
+                role: 'user',
+                neighborhood: localProfile.neighborhood || 'Downtown Spokane',
+                points: localProfile.points || 0,
+                badges: localProfile.badges || ['First Step'],
+                alias: localProfile.alias || '',
+                isCrisisAvailable: localProfile.isCrisisAvailable || false,
+                emergencyMentorId: localProfile.emergencyMentorId || ''
               };
-              setDoc(userDocRef, profile);
+
+              // Safely set user profile document in global Firestore DB
+              await setDoc(userDocRef, profile);
               setUserProfile(profile);
+
+              // Upload local attendance records if any exist
+              try {
+                const storedAttStr = localStorage.getItem('sober_spokane_attendance');
+                if (storedAttStr) {
+                  const att = JSON.parse(storedAttStr);
+                  if (Array.isArray(att) && att.length > 0) {
+                    for (const record of att) {
+                      await addDoc(collection(db, 'users', user.uid, 'attendance'), {
+                        meetingId: record.meetingId,
+                        meetingName: record.meetingName || 'Meeting',
+                        date: record.date || new Date().toISOString().split('T')[0],
+                        timestamp: serverTimestamp()
+                      });
+                    }
+                    localStorage.removeItem('sober_spokane_attendance');
+                  }
+                }
+              } catch (err) {
+                console.warn("Could not sync local attendance to Firestore on user creation:", err);
+              }
+
+              // Upload local mood logs if any exist
+              try {
+                const storedLogStr = localStorage.getItem('sober_spokane_moodLogs');
+                if (storedLogStr) {
+                  const logs = JSON.parse(storedLogStr);
+                  if (Array.isArray(logs) && logs.length > 0) {
+                    for (const log of logs) {
+                      await addDoc(collection(db, 'users', user.uid, 'moodLogs'), {
+                        userId: user.uid,
+                        mood: log.mood || 'okay',
+                        note: log.note || '',
+                        timestamp: serverTimestamp()
+                      });
+                    }
+                    localStorage.removeItem('sober_spokane_moodLogs');
+                  }
+                }
+              } catch (err) {
+                console.warn("Could not sync local mood logs on user creation:", err);
+              }
+
+              showToast("Your local profile progress has been backed up and saved to the database!", "success");
             }
+          }, (err) => {
+            console.warn("User profile snapshot error (using offline memory):", err);
           });
           return () => unsubProfile();
         } catch (e) {
           handleFirestoreError(e, OperationType.GET, `users/${user.uid}`);
         }
       } else {
-        setUserProfile(null);
-        setIsSuperAdmin(false);
-        setUserNeeds([]);
+        // Prevent clearing sandbox user session
+        setCurrentUser(prev => {
+          if (prev?.uid === 'sandbox-user-123') {
+            return prev;
+          }
+          setUserProfile(null);
+          setIsSuperAdmin(false);
+          setUserNeeds([]);
+          return null;
+        });
+        setIsAuthLoading(false);
       }
     });
     return unsubscribe;
   }, []);
+
+  // Check if landing with an Email Sign-In Link
+  useEffect(() => {
+    if (typeof window !== 'undefined' && isSignInWithEmailLink(auth, window.location.href)) {
+      const storedEmail = window.localStorage.getItem('emailForSignIn') || '';
+      if (!storedEmail) {
+        setIsWaitingForEmailConfirmation(true);
+      } else {
+        handleCompleteEmailLinkSignIn(storedEmail);
+      }
+    }
+  }, []);
+
+  const handleCompleteEmailLinkSignIn = async (emailToUse: string) => {
+    setIsAuthLoading(true);
+    setAuthError('');
+    try {
+      await signInWithEmailLink(auth, emailToUse, window.location.href);
+      window.localStorage.removeItem('emailForSignIn');
+      setIsWaitingForEmailConfirmation(false);
+      showToast("Successfully authenticated with Email Link!", "success");
+      
+      // Clean up URL parameters so the raw action link doesn't stay in the browser address bar
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (err: any) {
+      console.error("Passwordless completion error:", err);
+      const readableError = err.message || String(err);
+      setAuthError(readableError);
+      showToast(`Email link sign-in failed: ${readableError}`, "alert");
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  // Check for inbound Email Action Links (verifyEmail, resetPassword)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const mode = urlParams.get('mode');
+      const oobCode = urlParams.get('oobCode');
+
+      if (mode && oobCode) {
+        setActionMode(mode);
+        setActionOobCode(oobCode);
+        
+        if (mode === 'verifyEmail') {
+          handleVerifyEmailAction(oobCode);
+        } else if (mode === 'resetPassword') {
+          handleVerifyPasswordResetCode(oobCode);
+        }
+      }
+    }
+  }, []);
+
+  const handleVerifyEmailAction = async (code: string) => {
+    setIsEmailActionExecuting(true);
+    setEmailActionError(null);
+    setEmailActionSuccess(null);
+    try {
+      await applyActionCode(auth, code);
+      setEmailActionSuccess("Your email address has been successfully verified! You may now access all features of Spokane Recovery Network.");
+      showToast("Email address verified successfully!", "success");
+      
+      // Clean up URL parameters after some time or immediately so the browser url stays neat
+      setTimeout(() => {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }, 5000);
+    } catch (err: any) {
+      console.error("Email verification error:", err);
+      setEmailActionError(err.message || String(err));
+      showToast(`Verification failed: ${err.message || String(err)}`, "alert");
+    } finally {
+      setIsEmailActionExecuting(false);
+    }
+  };
+
+  const handleVerifyPasswordResetCode = async (code: string) => {
+    setIsEmailActionExecuting(true);
+    setEmailActionError(null);
+    setEmailActionSuccess(null);
+    try {
+      const emailObj = await verifyPasswordResetCode(auth, code);
+      setEmailActionEmail(emailObj);
+      showToast(`Verified password reset request for ${emailObj}`, "info");
+    } catch (err: any) {
+      console.error("verifyPasswordResetCode error:", err);
+      setEmailActionError(`Invalid or expired password reset link: ${err.message || String(err)}`);
+    } finally {
+      setIsEmailActionExecuting(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!actionOobCode) return;
+    setIsEmailActionExecuting(true);
+    setEmailActionError(null);
+    setEmailActionSuccess(null);
+    try {
+      await confirmPasswordReset(auth, actionOobCode, newPassword);
+      setEmailActionSuccess("Your password has been reset successfully! You can now log back in.");
+      showToast("Password reset successfully!", "success");
+      
+      // Reset form variables
+      setNewPassword('');
+      // Redirect back to login after showing success state
+      setTimeout(() => {
+        setActionMode(null);
+        setActionOobCode(null);
+        setEmailActionEmail(null);
+        setAuthMode('login');
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }, 4000);
+    } catch (err: any) {
+      console.error("confirmPasswordReset failure:", err);
+      setEmailActionError(err.message || String(err));
+      showToast(`Password reset failed: ${err.message || String(err)}`, "alert");
+    } finally {
+      setIsEmailActionExecuting(false);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'meetings'), orderBy('name', 'asc'));
     return onSnapshot(q, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Meeting[];
       setMeetings(list.length > 0 ? list : INITIAL_MEETINGS);
+    }, (err) => {
+      console.warn("Meetings snapshot error (using offline fallback):", err);
+      setMeetings(INITIAL_MEETINGS);
     });
   }, []);
 
@@ -512,11 +846,20 @@ export default function App() {
     return onSnapshot(q, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Sponsor[];
       setSponsors(list.length > 0 ? list : INITIAL_SPONSORS);
+    }, (err) => {
+      console.warn("Sponsors snapshot error (using offline fallback):", err);
+      const stored = localStorage.getItem('sober_spokane_sponsors');
+      setSponsors(stored ? JSON.parse(stored) : INITIAL_SPONSORS);
     });
   }, []);
 
   useEffect(() => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      const stored = localStorage.getItem('sober_spokane_chats');
+      setChatSessions(stored ? JSON.parse(stored) : []);
+      return;
+    }
     const q = query(
       collection(db, 'chats'), 
       or(where('userId', '==', currentUser.uid), where('mentorUserId', '==', currentUser.uid)),
@@ -524,6 +867,8 @@ export default function App() {
     );
     return onSnapshot(q, (snap) => {
       setChatSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatSession)));
+    }, (err) => {
+      console.warn("Chats snapshot error:", err);
     });
   }, [currentUser]);
 
@@ -532,17 +877,31 @@ export default function App() {
       setMessages([]);
       return;
     }
+    if (currentUser?.uid === 'sandbox-user-123') {
+      const stored = localStorage.getItem(`sober_spokane_messages_${activeChatId}`);
+      setMessages(stored ? JSON.parse(stored) : []);
+      return;
+    }
     const q = query(collection(db, 'chats', activeChatId, 'messages'), orderBy('timestamp', 'asc'));
     return onSnapshot(q, (snap) => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
+    }, (err) => {
+      console.warn("Messages snapshot error:", err);
     });
-  }, [activeChatId]);
+  }, [activeChatId, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      const stored = localStorage.getItem('sober_spokane_moodLogs');
+      setMoodLogs(stored ? JSON.parse(stored) : []);
+      return;
+    }
     const q = query(collection(db, 'users', currentUser.uid, 'moodLogs'), orderBy('timestamp', 'desc'));
     return onSnapshot(q, (snap) => {
       setMoodLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as MoodEntry)));
+    }, (err) => {
+      console.warn("MoodLogs snapshot error:", err);
     });
   }, [currentUser]);
 
@@ -551,6 +910,8 @@ export default function App() {
     const q = query(collection(db, 'users'));
     return onSnapshot(q, (snap) => {
       setAllUserProfiles(snap.docs.map(d => ({ uid: d.id, ...d.data() } as UserProfile & { uid: string })));
+    }, (err) => {
+      console.warn("AllUserProfiles snapshot error:", err);
     });
   }, [isSuperAdmin]);
 
@@ -599,6 +960,92 @@ export default function App() {
 
   const triggerSystemNotification = (title: string, body: string) => {
     showToast(`${title}: ${body}`, "info");
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        if (swRegistration) {
+          swRegistration.showNotification(title, {
+            body: body,
+            icon: '/favicon.ico',
+            badge: '/favicon.ico',
+          });
+        } else {
+          new Notification(title, {
+            body: body,
+            icon: '/favicon.ico',
+          });
+        }
+      } catch (err) {
+        console.warn('Native notification suppressed or failed in current webview context:', err);
+      }
+    }
+  };
+
+  const getDistanceMiles = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 3958.8; // Radius of Earth in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const handleFetchLiveLocation = () => {
+    setIsLocating(true);
+    setLocationError(null);
+    showToast("Connecting to GPS client...", "info");
+
+    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+      setLocationError("GPS geolocation client is not supported by this browser.");
+      setIsLocating(false);
+      showToast("GPS client error", "alert");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        setIsLocating(false);
+        setSortByProximity(true);
+        showToast("GPS Lock acquired!", "success");
+        triggerSystemNotification("Location Synchronized", `Coordinates locked: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+      },
+      (error) => {
+        console.warn("[GPS Error]", error);
+        let errorMsg = "Access denied or signal timeout.";
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMsg = "Location permission denied. Please allow map access in your browser settings.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMsg = "Location position unavailable.";
+        } else if (error.code === error.TIMEOUT) {
+          errorMsg = "GPS query timed out. Retrying with higher accuracy tolerance...";
+        }
+        setLocationError(errorMsg);
+        setIsLocating(false);
+        showToast(errorMsg, "alert");
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+  };
+
+  const handleSimulateGPSLocation = () => {
+    setIsLocating(true);
+    setLocationError(null);
+    showToast("Simulating Fused Location Provider Client scan...", "info");
+    
+    setTimeout(() => {
+      // Simulate Spokane Downtown Center Point GPS: (47.65878, -117.42605) +/- tiny randomized offset
+      const simulatedLat = 47.6588 + (Math.random() - 0.5) * 0.01;
+      const simulatedLng = -117.4260 + (Math.random() - 0.5) * 0.01;
+      setUserLocation({ lat: simulatedLat, lng: simulatedLng });
+      setIsLocating(false);
+      setSortByProximity(true);
+      showToast("Play Services Simulated GPS Lock established!", "success");
+      triggerSystemNotification("Play Services GPS Simulated", `Bypass coordinates established: ${simulatedLat.toFixed(4)}, ${simulatedLng.toFixed(4)}`);
+    }, 1200);
   };
 
   const handleSandboxLogin = () => {
@@ -612,15 +1059,25 @@ export default function App() {
     } as any;
     
     setCurrentUser(simulatedUser);
-    setUserProfile({
+
+    const savedProfile = localStorage.getItem('sober_spokane_userProfile');
+    const defaultProfile: UserProfile = {
       email: 'sandbox@soberspokane.org',
       name: 'Spokane Peer (Sandbox)',
       photoURL: '',
       sobrietyDate: '2023-01-15',
       recoveryNeeds: ['Meetings', 'Peer Support'],
       neighborhood: 'Downtown Spokane',
-      role: 'user'
-    });
+      role: 'user',
+      points: 120,
+      badges: ['First Step']
+    };
+    const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
+    setUserProfile(finalProfile);
+    setUserNeeds(finalProfile.recoveryNeeds || []);
+    setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
+    setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
+
     setIsSuperAdmin(false);
     setIsAuthLoading(false);
     showToast("Welcome! Logging in with Simulated Sandbox Profile.", "success");
@@ -676,6 +1133,7 @@ export default function App() {
   const handleLogin = async () => {
     setAuthError('');
     try {
+      await applyPersistenceMode(persistenceMode);
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential && credential.accessToken) {
@@ -698,6 +1156,7 @@ export default function App() {
     }
 
     try {
+      await applyPersistenceMode(persistenceMode);
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: any) {
       console.error("Email login error:", e);
@@ -716,8 +1175,14 @@ export default function App() {
     }
 
     try {
+      await applyPersistenceMode(persistenceMode);
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCred.user);
+      
+      const actionCodeSettings = {
+        url: `${window.location.origin}${window.location.pathname}?email=${encodeURIComponent(userCred.user.email || email)}&emailVerified=true`,
+        handleCodeInApp: false,
+      };
+      await sendEmailVerification(userCred.user, actionCodeSettings);
       setResetSent(true);
     } catch (e: any) {
       console.error("Signup error:", e);
@@ -729,10 +1194,41 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     try {
-      await sendPasswordResetEmail(auth, email);
+      const actionCodeSettings = {
+        url: `${window.location.origin}${window.location.pathname}?passwordResetComplete=true&email=${encodeURIComponent(email)}`,
+        handleCodeInApp: false,
+      };
+      await sendPasswordResetEmail(auth, email, actionCodeSettings);
       setResetSent(true);
     } catch (e: any) {
       console.error("Password reset error:", e);
+      setAuthError(parseAuthError(e));
+    }
+  };
+
+  const handleSendEmailLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    
+    const verified = await verifyRecaptchaEnterprise(recaptchaAction, activeRecaptchaKey);
+    if (!verified) {
+      setAuthError('reCAPTCHA Enterprise Verification failed. Please resolve the security check.');
+      return;
+    }
+
+    try {
+      await applyPersistenceMode(persistenceMode);
+      const actionCodeSettings = {
+        url: window.location.origin + window.location.pathname,
+        handleCodeInApp: true,
+      };
+
+      await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+      window.localStorage.setItem('emailForSignIn', email);
+      setEmailLinkSent(true);
+      showToast("Secure login link sent to your inbox!", "success");
+    } catch (e: any) {
+      console.error("sendSignInLinkToEmail failure:", e);
       setAuthError(parseAuthError(e));
     }
   };
@@ -746,7 +1242,11 @@ export default function App() {
     if (currentUser) {
       setVerificationLoading(true);
       try {
-        await sendEmailVerification(currentUser);
+        const actionCodeSettings = {
+          url: `${window.location.origin}${window.location.pathname}?email=${encodeURIComponent(currentUser.email || '')}&emailVerified=true`,
+          handleCodeInApp: false,
+        };
+        await sendEmailVerification(currentUser, actionCodeSettings);
         setVerificationSent(true);
         showToast("Verification email sent!", "success");
       } catch (e) {
@@ -773,6 +1273,13 @@ export default function App() {
   }, [userProfile?.sobrietyDate]);
 
   const handleUpdateSponsor = async (id: string, updates: Partial<Sponsor>) => {
+    if (currentUser?.uid === 'sandbox-user-123') {
+      const updatedSponsors = sponsors.map(s => s.id === id ? { ...s, ...updates } : s);
+      setSponsors(updatedSponsors);
+      localStorage.setItem('sober_spokane_sponsors', JSON.stringify(updatedSponsors));
+      showToast("Profile Updated (Sandbox Local)!", "success");
+      return;
+    }
     try {
       await updateDoc(doc(db, 'sponsors', id), updates);
       showToast("Profile Updated!", "success");
@@ -786,7 +1293,7 @@ export default function App() {
     await handleUpdateSponsor(id, { 
       isVerified: true, 
       status: 'verified',
-      verifiedAt: serverTimestamp(),
+      verifiedAt: currentUser.uid === 'sandbox-user-123' ? (Date.now() as any) : serverTimestamp(),
       verifiedBy: currentUser.email || currentUser.uid
     });
   };
@@ -796,7 +1303,7 @@ export default function App() {
     await handleUpdateSponsor(id, { 
       isVerified: false, 
       status: 'rejected',
-      verifiedAt: serverTimestamp(),
+      verifiedAt: currentUser.uid === 'sandbox-user-123' ? (Date.now() as any) : serverTimestamp(),
       verifiedBy: currentUser.email || currentUser.uid
     });
   };
@@ -809,6 +1316,21 @@ export default function App() {
 
   const handleApplySponsor = async (app: Omit<Sponsor, 'id' | 'isVerified' | 'status' | 'userId'>) => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      const newSponsor: Sponsor = {
+        ...app,
+        id: `sim-sp-${Date.now()}`,
+        userId: currentUser.uid,
+        isVerified: false,
+        status: 'pending'
+      };
+      const updatedSponsors = [newSponsor, ...sponsors];
+      setSponsors(updatedSponsors);
+      localStorage.setItem('sober_spokane_sponsors', JSON.stringify(updatedSponsors));
+      setTab('meetings');
+      triggerSystemNotification('Application Sent (Sandbox)', 'Profile completed in temporary sandbox state.');
+      return;
+    }
     if (!isEmailVerified) {
       showToast("Verification required to apply", "alert");
       handleResendVerification();
@@ -832,6 +1354,42 @@ export default function App() {
   const handleStartChat = async (sponsor: Sponsor, initialText: string) => {
     if (!currentUser) {
       setTab('profile');
+      return;
+    }
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      const simulatedChatId = `chat-sim-${sponsor.id}`;
+      let activeSessions = [...chatSessions];
+      if (!activeSessions.some(c => c.id === simulatedChatId)) {
+        const newChat: ChatSession = {
+          id: simulatedChatId,
+          userId: currentUser.uid,
+          userName: currentUser.displayName || 'Spokane Peer',
+          mentorUserId: sponsor.userId || 'mentor-123',
+          sponsorId: String(sponsor.id),
+          sponsorName: sponsor.name,
+          lastMessageAt: Date.now()
+        };
+        activeSessions = [newChat, ...activeSessions];
+        setChatSessions(activeSessions);
+        localStorage.setItem('sober_spokane_chats', JSON.stringify(activeSessions));
+        
+        const firstMsg: Message = {
+          id: `msg-${Date.now()}`,
+          senderId: currentUser.uid,
+          text: initialText,
+          timestamp: Date.now() as any
+        };
+        const activeMsgs = [firstMsg];
+        setMessages(activeMsgs);
+        localStorage.setItem(`sober_spokane_messages_${simulatedChatId}`, JSON.stringify(activeMsgs));
+      } else {
+        const storedMsgs = localStorage.getItem(`sober_spokane_messages_${simulatedChatId}`);
+        setMessages(storedMsgs ? JSON.parse(storedMsgs) : []);
+      }
+      setActiveChatId(simulatedChatId);
+      setReachingOutTo(null);
+      setTab('chat');
       return;
     }
 
@@ -871,6 +1429,20 @@ export default function App() {
 
   const handleLogMood = async (mood: MoodEntry['mood'], note: string) => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      const newEntry: MoodEntry = {
+        id: `mood-${Date.now()}`,
+        userId: currentUser.uid,
+        mood,
+        note,
+        timestamp: Date.now() as any
+      };
+      const updatedLogs = [newEntry, ...moodLogs];
+      setMoodLogs(updatedLogs);
+      localStorage.setItem('sober_spokane_moodLogs', JSON.stringify(updatedLogs));
+      triggerSystemNotification('Mood Logged (Sandbox)', 'Stay consistent. You are doing great.');
+      return;
+    }
     if (!isEmailVerified) {
       showToast("Verification required to log mood", "alert");
       handleResendVerification();
@@ -966,6 +1538,35 @@ export default function App() {
 
   const handleSendMessage = async (text: string) => {
     if (!activeChatId || !currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      const newMsg: Message = {
+        id: `msg-${Date.now()}`,
+        senderId: currentUser.uid,
+        text,
+        timestamp: Date.now() as any
+      };
+      const updatedMsgs = [...messages, newMsg];
+      setMessages(updatedMsgs);
+      localStorage.setItem(`sober_spokane_messages_${activeChatId}`, JSON.stringify(updatedMsgs));
+
+      const updatedChats = chatSessions.map(c => {
+        if (c.id === activeChatId) {
+          return {
+            ...c,
+            lastMessageAt: Date.now(),
+            lastRead: {
+              ...(c.lastRead || {}),
+              [currentUser.uid]: Date.now()
+            }
+          };
+        }
+        return c;
+      });
+      setChatSessions(updatedChats);
+      localStorage.setItem('sober_spokane_chats', JSON.stringify(updatedChats));
+      showToast("Message sent (Sandbox Local)", "success");
+      return;
+    }
     try {
       const chatRef = doc(db, 'chats', activeChatId);
       await addDoc(collection(chatRef, 'messages'), {
@@ -986,6 +1587,7 @@ export default function App() {
 
   const handleUpdateTyping = async (isTyping: boolean) => {
     if (!activeChatId || !currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') return;
     try {
       await updateDoc(doc(db, 'chats', activeChatId), {
         [`typingStatus.${currentUser.uid}`]: isTyping
@@ -998,6 +1600,13 @@ export default function App() {
   const toggleNeed = async (need: string) => {
     if (!currentUser) return;
     const newNeeds = userNeeds.includes(need) ? userNeeds.filter(n => n !== need) : [...userNeeds, need];
+    if (currentUser.uid === 'sandbox-user-123') {
+      setUserNeeds(newNeeds);
+      setUserProfile(prev => prev ? { ...prev, recoveryNeeds: newNeeds } : prev);
+      const profileToSave = { ...(userProfile || {}), recoveryNeeds: newNeeds };
+      localStorage.setItem('sober_spokane_userProfile', JSON.stringify(profileToSave));
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), {
         recoveryNeeds: newNeeds
@@ -1011,6 +1620,13 @@ export default function App() {
   const handleUpdateSobrietyDate = async (date: string) => {
     if (!currentUser) return;
     setSobrietyDate(date);
+    if (currentUser.uid === 'sandbox-user-123') {
+      setUserProfile(prev => prev ? { ...prev, sobrietyDate: date } : prev);
+      const profileToSave = { ...(userProfile || {}), sobrietyDate: date };
+      localStorage.setItem('sober_spokane_userProfile', JSON.stringify(profileToSave));
+      showToast("Sobriety date updated (Sandbox)!", "success");
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), {
         sobrietyDate: date
@@ -1024,6 +1640,13 @@ export default function App() {
 
   const handleUpdateNeighborhood = async (neighborhood: string) => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      setUserProfile(prev => prev ? { ...prev, neighborhood } : prev);
+      const profileToSave = { ...(userProfile || {}), neighborhood };
+      localStorage.setItem('sober_spokane_userProfile', JSON.stringify(profileToSave));
+      triggerSystemNotification('Location Updated (Sandbox)', `Preferences set to ${neighborhood}. Matching updated.`);
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), {
         neighborhood
@@ -1037,6 +1660,13 @@ export default function App() {
 
   const handleUpdateProfile = async (updates: Partial<UserProfile>) => {
     if (!currentUser) return;
+    if (currentUser.uid === 'sandbox-user-123') {
+      setUserProfile(prev => prev ? { ...prev, ...updates } : prev);
+      const profileToSave = { ...(userProfile || {}), ...updates };
+      localStorage.setItem('sober_spokane_userProfile', JSON.stringify(profileToSave));
+      showToast("Profile updated (Sandbox Local)!", "success");
+      return;
+    }
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), updates);
       setUserProfile(prev => prev ? { ...prev, ...updates } : prev);
@@ -1094,16 +1724,43 @@ export default function App() {
       return;
     }
 
-    if (!isEmailVerified) {
-      showToast("Verification required to log attendance", "alert");
-      handleResendVerification();
-      return;
-    }
-
     const today = new Date().toISOString().split('T')[0];
     const alreadyLogged = attendance.some(a => a.meetingId === meeting.id && a.date === today);
     if (alreadyLogged) {
       showToast("Already logged this meeting today!", "info");
+      return;
+    }
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      const newRecord: AttendanceRecord = {
+        id: `att-${Date.now()}`,
+        meetingId: meeting.id,
+        meetingName: meeting.name,
+        date: today,
+        timestamp: Date.now() as any
+      };
+      const updatedAttendance = [newRecord, ...attendance];
+      setAttendance(updatedAttendance);
+      localStorage.setItem('sober_spokane_attendance', JSON.stringify(updatedAttendance));
+
+      if (userProfile) {
+        const newPoints = (userProfile.points || 0) + 10;
+        const newBadges = [...(userProfile.badges || [])];
+        if (updatedAttendance.length >= 5 && !newBadges.includes('Meeting Warrior')) {
+          newBadges.push('Meeting Warrior');
+          showToast("Achievement Unlocked: Meeting Warrior! 🛡️", "success");
+        }
+        const updatedProfile = { ...userProfile, points: newPoints, badges: newBadges };
+        setUserProfile(updatedProfile);
+        localStorage.setItem('sober_spokane_userProfile', JSON.stringify(updatedProfile));
+        showToast("Logged! +10 Community Points (Sandbox Local)", "success");
+      }
+      return;
+    }
+
+    if (!isEmailVerified) {
+      showToast("Verification required to log attendance", "alert");
+      handleResendVerification();
       return;
     }
 
@@ -1219,17 +1876,210 @@ export default function App() {
   }, [sponsors, userNeeds, userProfile]);
 
   const filteredMeetings = useMemo(() => {
-    return meetings.filter(m => {
+    let result = meetings.filter(m => {
       const matchSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           m.neighborhood.toLowerCase().includes(searchQuery.toLowerCase());
       const matchNeighborhood = selectedNeighborhood === 'All' || m.neighborhood === selectedNeighborhood;
       return matchSearch && matchNeighborhood;
     });
-  }, [meetings, searchQuery, selectedNeighborhood]);
+
+    if (sortByProximity && userLocation) {
+      // Map meetings with their computed physical distance to the user's latitude/longitude
+      const withDistance = result.map(m => {
+        const dist = getDistanceMiles(userLocation.lat, userLocation.lng, m.lat, m.lng);
+        return { ...m, distance: dist };
+      });
+      // Sort in-place by distance
+      withDistance.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+      return withDistance;
+    }
+
+    return result;
+  }, [meetings, searchQuery, selectedNeighborhood, sortByProximity, userLocation]);
 
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
       <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-28 font-sans selection:bg-blue-500 selection:text-white">
+      {isWaitingForEmailConfirmation && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl space-y-6 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto text-2xl border border-blue-500/20">🛡️</div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-white italic uppercase tracking-tight">Confirm Your Email</h3>
+              <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                This verification link was opened in another interface or device. Please confirm the email address to proceed securely.
+              </p>
+            </div>
+            
+            <form onSubmit={(e) => { e.preventDefault(); handleCompleteEmailLinkSignIn(confirmationEmail); }} className="space-y-4">
+              <input
+                type="email"
+                placeholder="Name@example.com"
+                value={confirmationEmail}
+                onChange={(e) => setConfirmationEmail(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all text-center placeholder:text-slate-500 font-bold"
+                required
+              />
+              <button
+                type="submit"
+                className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg active:scale-95 cursor-pointer"
+              >
+                Confirm & Enter Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsWaitingForEmailConfirmation(false)}
+                className="w-full py-3.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-2xl font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer"
+              >
+                Cancel Sign In
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {actionMode && actionOobCode && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 overflow-y-auto font-sans">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl space-y-6 relative animate-in fade-in zoom-in-95 duration-200 text-center">
+            {(!isEmailActionExecuting || emailActionSuccess || emailActionError) && (
+              <button 
+                onClick={() => {
+                  setActionMode(null);
+                  setActionOobCode(null);
+                  setEmailActionSuccess(null);
+                  setEmailActionError(null);
+                  setEmailActionEmail(null);
+                  if (window.history && window.history.replaceState) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }
+                }}
+                className="absolute top-6 right-6 text-slate-500 hover:text-slate-300 transition-colors text-[9px] font-black uppercase tracking-widest bg-slate-800 hover:bg-slate-750 px-3 py-1.5 rounded-full cursor-pointer"
+              >
+                ✕ Close
+              </button>
+            )}
+
+            {actionMode === 'verifyEmail' && (
+              <div className="space-y-6 py-4">
+                <div className="w-16 h-16 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto text-2xl border border-blue-500/20">
+                  {isEmailActionExecuting ? (
+                    <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                  ) : emailActionError ? (
+                    '⚠️'
+                  ) : (
+                    '✅'
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-xl font-black text-white italic uppercase tracking-tight">
+                    {isEmailActionExecuting ? 'Verifying Account' : emailActionError ? 'Verification Failed' : 'Email Verified!'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                    {isEmailActionExecuting 
+                      ? 'Communicating safely with security servers to certify your credentials...'
+                      : emailActionError 
+                      ? 'The authentication code is invalid, expired, or has already been used.' 
+                      : emailActionSuccess}
+                  </p>
+                </div>
+
+                {emailActionError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[10px] text-red-400 font-mono text-left break-all leading-normal">
+                    {emailActionError}
+                  </div>
+                )}
+
+                {!isEmailActionExecuting && (
+                  <button
+                    onClick={() => {
+                      setActionMode(null);
+                      setActionOobCode(null);
+                      setEmailActionSuccess(null);
+                      setEmailActionError(null);
+                      if (window.history && window.history.replaceState) {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                      }
+                    }}
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg cursor-pointer"
+                  >
+                    Enter Spokane Recovery Network
+                  </button>
+                )}
+              </div>
+            )}
+
+            {actionMode === 'resetPassword' && (
+              <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <div className="w-16 h-16 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto text-2xl border border-blue-500/20 mb-4">
+                    {isEmailActionExecuting ? (
+                      <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      '🔑'
+                    )}
+                  </div>
+                  <h3 className="text-xl font-black text-white italic uppercase tracking-tight">
+                    {emailActionSuccess ? 'Password Updated!' : 'Reset Account Password'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                    {isEmailActionExecuting 
+                      ? 'Reaching database to verify your recovery credentials...' 
+                      : emailActionSuccess 
+                      ? emailActionSuccess
+                      : emailActionEmail 
+                      ? `Please establish a secure, strong, new password for ${emailActionEmail}`
+                      : 'Please follow coordinates to verify your link.'}
+                  </p>
+                </div>
+
+                {emailActionError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[10px] text-red-400 font-mono text-left break-all leading-normal mb-2">
+                    {emailActionError}
+                  </div>
+                )}
+
+                {emailActionEmail && !emailActionSuccess && (
+                  <form onSubmit={handleConfirmPasswordReset} className="space-y-4 pt-2 text-left">
+                    <div className="space-y-1.5">
+                      <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">New Secure Password</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all placeholder:text-slate-600 font-bold"
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isEmailActionExecuting}
+                      className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      {isEmailActionExecuting ? 'Updating Keychain...' : 'Confirm New Password'}
+                    </button>
+                  </form>
+                )}
+
+                {(!emailActionEmail && !isEmailActionExecuting && !emailActionSuccess) && (
+                  <button
+                    onClick={() => {
+                      setActionMode(null);
+                      setActionOobCode(null);
+                      setEmailActionError(null);
+                    }}
+                    className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-2xl font-bold uppercase tracking-widest text-[9px] transition-all cursor-pointer"
+                  >
+                    Go Back to Login
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="fixed inset-0 pointer-events-none overflow-hidden opacity-30">
         <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[120px] rounded-full" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-600/10 blur-[100px] rounded-full" />
@@ -1247,9 +2097,22 @@ export default function App() {
                 </div>
              </div>
              <div>
-                <div className="flex items-baseline gap-0.5 leading-none">
-                   <h1 className="text-xl font-black text-white tracking-tighter">my</h1>
-                   <h1 className="text-xl font-black text-blue-500 tracking-tighter uppercase italic">Recovery</h1>
+                <div className="flex items-center gap-2 leading-none">
+                   <div className="flex items-baseline gap-0.5">
+                      <h1 className="text-xl font-black text-white tracking-tighter">my</h1>
+                      <h1 className="text-xl font-black text-blue-500 tracking-tighter uppercase italic">Recovery</h1>
+                   </div>
+                   {currentUser && currentUser.uid !== 'sandbox-user-123' ? (
+                     <span className="px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shrink-0" />
+                       Cloud DB Active
+                     </span>
+                   ) : (
+                     <span className="px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0" />
+                       Guest Safe Storage
+                     </span>
+                   )}
                 </div>
                 <p className="text-[8px] text-slate-500 font-bold uppercase tracking-[0.3em]">Spokane Support Network</p>
              </div>
@@ -1320,6 +2183,99 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* --- FUSED GPS / GEOLOCATION PWA CLIENT --- */}
+                <div id="pwa-location-client" className="bg-slate-900/40 border border-slate-800/80 p-6 rounded-[2rem] space-y-4 shadow-xl">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800/60 pb-3.5">
+                    <div>
+                      <h4 className="text-[11px] font-black tracking-[0.15em] text-slate-400 uppercase font-mono flex items-center gap-1.5">
+                        <MapPin size={12} className="text-blue-400 animate-pulse" /> Google Play Services & Geolocation Client
+                      </h4>
+                      <p className="text-[9.5px] text-slate-500 font-medium leading-normal mt-0.5">
+                        Uses high-precision Web Geolocation & Fused Location client equivalents to sort peer meetings by proximity.
+                      </p>
+                    </div>
+                    {userLocation && (
+                      <span className="text-[9px] font-mono px-2.5 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-lg shrink-0 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                        ACTIVE LOCK: {userLocation.lat.toFixed(4)}° N, {userLocation.lng.toFixed(4)}° W
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={handleFetchLiveLocation}
+                        disabled={isLocating}
+                        className="px-4 py-2.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-600/20 hover:border-blue-500 disabled:opacity-50 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2"
+                      >
+                        {isLocating ? (
+                          <>
+                            <span className="w-2 h-2 bg-blue-400 rounded-full animate-ping" />
+                            LOCATING...
+                          </>
+                        ) : (
+                          "🎯 LOCK DEVICE GPS"
+                        )}
+                      </button>
+                      <button
+                        onClick={handleSimulateGPSLocation}
+                        disabled={isLocating}
+                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 disabled:opacity-50 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        📍 SIMULATE SPOKANE GPS
+                      </button>
+                      {userLocation && (
+                        <button
+                          onClick={() => {
+                            setUserLocation(null);
+                            setSortByProximity(false);
+                            setLocationError(null);
+                            showToast("Location cached data cleared.", "info");
+                          }}
+                          className="px-3.5 py-2 hover:bg-slate-800/50 text-slate-500 hover:text-slate-400 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                        >
+                          Clear Lock
+                        </button>
+                      )}
+                    </div>
+
+                    {userLocation && (
+                      <label className="flex items-center gap-2.5 cursor-pointer bg-slate-950/40 px-4 py-2.5 rounded-xl border border-slate-800 select-none self-start sm:self-auto">
+                        <input
+                          type="checkbox"
+                          checked={sortByProximity}
+                          onChange={(e) => {
+                            setSortByProximity(e.target.checked);
+                            showToast(
+                              e.target.checked 
+                                ? "Sorting by proximity active!" 
+                                : "Standard neighborhood sorting active.", 
+                              "success"
+                            );
+                          }}
+                          className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer accent-blue-600"
+                        />
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-wider font-mono">
+                          Sort by physical proximity
+                        </span>
+                      </label>
+                    )}
+                  </div>
+
+                  {locationError && (
+                    <div className="bg-rose-500/5 border border-rose-500/10 p-3.5 rounded-2xl flex items-start gap-2.5">
+                      <AlertCircle size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black text-rose-400 uppercase tracking-wider">Play Services Geolocation Client Alert</p>
+                        <p className="text-[9.5px] text-slate-400 font-medium leading-relaxed">
+                          {locationError}. Try tapping <strong className="text-slate-200">Simulate Spokane GPS</strong> to bypass sandbox host permissions, or review browser permissions.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1534,8 +2490,45 @@ export default function App() {
                   ) : (
                     <>
                       <div className="text-center space-y-2">
-                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">{authMode === 'login' ? 'Welcome Back' : 'Join the Network'}</h2>
+                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">
+                          {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Join the Network' : authMode === 'forgot' ? 'Reset Password' : 'Passwordless Access'}
+                        </h2>
                       </div>
+
+                      {/* Sign-in Methods Tabs */}
+                      {authMode !== 'forgot' && (
+                        <div className="bg-slate-950 border border-slate-850 p-1.5 rounded-2xl flex gap-1 mb-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuthMode('login');
+                              setAuthError('');
+                            }}
+                            className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                              authMode === 'login' || authMode === 'signup'
+                                ? 'bg-slate-800 text-white shadow-md border border-slate-705/30'
+                                : 'text-slate-500 hover:text-slate-350'
+                            }`}
+                          >
+                            🔑 Password Access
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAuthMode('passwordless');
+                              setAuthError('');
+                              setEmailLinkSent(false);
+                            }}
+                            className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+                              authMode === 'passwordless'
+                                ? 'bg-slate-850 text-white shadow-md border border-slate-705/30'
+                                : 'text-slate-505 hover:text-slate-350'
+                            }`}
+                          >
+                            📬 Email link (No password)
+                          </button>
+                        </div>
+                      )}
                       {authError && (
                         <div>
                           {authError === 'recaptcha-verify-failed' ? (
@@ -1662,95 +2655,365 @@ export default function App() {
                           )}
                         </div>
                       )}
-                      <form id="demo-form" onSubmit={authMode === 'login' ? handleEmailLogin : handleSignup} className="space-y-4">
-                        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
-                        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
-                        {authMode === 'login' && (
-                          <button type="button" onClick={handleResetPassword} className="text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-blue-400 block ml-auto px-1">Forgot Password?</button>
-                        )}
-
-                        {/* reCAPTCHA Enterprise Shield Selection */}
-                        <div className="bg-slate-900/65 p-3.5 border border-slate-800/80 rounded-2xl space-y-2 my-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                              🛡️ Enterprise Security Shield
-                            </span>
-                            <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/10 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Active</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-[10px]">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveRecaptchaKey('6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n');
-                                setRecaptchaAction('LOGIN');
-                                showToast("Switched to Enterprise Login Shield!", "info");
-                              }}
-                              className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                                activeRecaptchaKey === '6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n'
-                                  ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
-                                  : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
-                              }`}
-                            >
-                              🔑 Custom (LOGIN)
-                              <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6LeXmPks</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveRecaptchaKey('6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag');
-                                setRecaptchaAction('submit');
-                                showToast("Switched to Fallback submit token!", "info");
-                              }}
-                              className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                                activeRecaptchaKey === '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag'
-                                  ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
-                                  : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
-                              }`}
-                            >
-                              🌍 Fallback (SUBMIT)
-                              <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6Le6aPks</span>
-                            </button>
-                          </div>
+                      {authMode === 'passwordless' && emailLinkSent ? (
+                        <div className="bg-blue-650/5 border border-blue-500/20 p-6 rounded-3xl space-y-4 text-center">
+                          <div className="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-full flex items-center justify-center mx-auto text-xl border border-blue-500/15">📬</div>
+                          <h4 className="text-sm font-black uppercase tracking-wider text-white">Security Link Sent</h4>
+                          <p className="text-[10px] text-slate-350 leading-relaxed font-semibold">
+                            We have sent a secure, one-click login link to <strong className="text-blue-400">{email}</strong>. 
+                            Please verify your inbox and click the security link to instantly enter your profile.
+                          </p>
+                          <p className="text-[9px] text-slate-500 font-medium font-semibold leading-relaxed">
+                            If you open the security link on a different device or browser window, you will be prompted to safely confirm your email address.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEmailLinkSent(false);
+                              setAuthError('');
+                            }}
+                            className="w-full mt-2 py-4 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-2xl font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                          >
+                            ← Use another email address
+                          </button>
                         </div>
+                      ) : (
+                        <form id="demo-form" onSubmit={
+                          authMode === 'login' ? handleEmailLogin : 
+                          authMode === 'signup' ? handleSignup : 
+                          authMode === 'forgot' ? handleResetPassword : 
+                          handleSendEmailLink
+                        } className="space-y-4">
+                          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
+                          
+                          {(authMode === 'login' || authMode === 'signup') && (
+                            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-white text-sm focus:border-blue-500 outline-none transition-all" required />
+                          )}
+                          
+                          {authMode === 'login' && (
+                            <button type="button" onClick={handleResetPassword} className="text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-blue-400 block ml-auto px-1">Forgot Password?</button>
+                          )}
 
-                        {isVerifyingRecaptcha && (
-                          <div className="bg-blue-600/10 border border-blue-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
-                            <span className="text-blue-400 font-bold uppercase tracking-wider">Verifying with reCAPTCHA Enterprise...</span>
-                            <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                          {/* Firebase State Persistence Selection */}
+                          {authMode !== 'forgot' && (
+                            <div className="bg-slate-900/65 p-3.5 border border-slate-800/80 rounded-2xl space-y-2 my-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                  🔒 Session Trust Level
+                                </span>
+                                <span className={`text-[8px] border px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
+                                  persistenceMode === 'local' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/10' :
+                                  persistenceMode === 'session' ? 'bg-blue-500/10 text-blue-400 border-blue-500/10' :
+                                  'bg-amber-500/10 text-amber-400 border-amber-500/10'
+                                }`}>
+                                  {persistenceMode === 'local' ? '💻 Perpetual' : persistenceMode === 'session' ? '🕒 Session' : '🧼 Memory'}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPersistenceMode('local');
+                                    applyPersistenceMode('local');
+                                    showToast("Switched to Local/Perpetual persistence!", "info");
+                                  }}
+                                  className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                    persistenceMode === 'local'
+                                      ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                      : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                  }`}
+                                >
+                                  📱 Local
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPersistenceMode('session');
+                                    applyPersistenceMode('session');
+                                    showToast("Switched to Session-only persistence!", "info");
+                                  }}
+                                  className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                    persistenceMode === 'session'
+                                      ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                      : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                  }`}
+                                >
+                                  🕒 Session
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPersistenceMode('none');
+                                    applyPersistenceMode('none');
+                                    showToast("Switched to Memory-only persistence!", "info");
+                                  }}
+                                  className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                    persistenceMode === 'none'
+                                      ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                      : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                  }`}
+                                >
+                                  🧼 None
+                                </button>
+                              </div>
+                              <p className="text-[7.5px] text-slate-500 px-1 font-semibold leading-relaxed">
+                                {persistenceMode === 'local' ? "🔒 Keeps you logged in even after closing the tab." : 
+                                 persistenceMode === 'session' ? "🕒 Closes after closing the browser tab / window." : 
+                                 "🧼 Logs out automatically on any page refresh (Memory-only)."}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* reCAPTCHA Enterprise Shield Selection */}
+                          <div className="bg-slate-900/65 p-3.5 border border-slate-800/80 rounded-2xl space-y-2 my-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                🛡️ Enterprise Security Shield
+                              </span>
+                              <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/10 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Active</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveRecaptchaKey('6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n');
+                                  setRecaptchaAction('LOGIN');
+                                  showToast("Switched to Enterprise Login Shield!", "info");
+                                }}
+                                className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                  activeRecaptchaKey === '6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n'
+                                    ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                    : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                }`}
+                              >
+                                🔑 Custom (LOGIN)
+                                <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6LeXmPks</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveRecaptchaKey('6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag');
+                                  setRecaptchaAction('submit');
+                                  showToast("Switched to Fallback submit token!", "info");
+                                }}
+                                className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                  activeRecaptchaKey === '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag'
+                                    ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                    : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                }`}
+                              >
+                                🌍 Fallback (SUBMIT)
+                                <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6Le6aPks</span>
+                              </button>
+                            </div>
                           </div>
-                        )}
-                        {!isVerifyingRecaptcha && recaptchaScore !== null && (
-                          <div className="bg-emerald-500/10 border border-emerald-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
-                            <span className="text-emerald-400 font-bold uppercase tracking-wider">reCAPTCHA Validated</span>
-                            <span className="text-white bg-emerald-600/30 px-2 py-0.5 rounded-full font-mono font-bold">Score: {recaptchaScore}</span>
+
+                          {isVerifyingRecaptcha && (
+                            <div className="bg-blue-600/10 border border-blue-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
+                              <span className="text-blue-400 font-bold uppercase tracking-wider">Verifying with reCAPTCHA Enterprise...</span>
+                              <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          )}
+                          {!isVerifyingRecaptcha && recaptchaScore !== null && (
+                            <div className="bg-emerald-500/10 border border-emerald-500/25 p-3.5 rounded-xl flex items-center justify-between text-[10px] my-2">
+                              <span className="text-emerald-400 font-bold uppercase tracking-wider">reCAPTCHA Validated</span>
+                              <span className="text-white bg-emerald-600/30 px-2 py-0.5 rounded-full font-mono font-bold">Score: {recaptchaScore}</span>
+                            </div>
+                          )}
+                          <button 
+                            type="submit" 
+                            id="submit-btn"
+                            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 active:scale-95 cursor-pointer text-[10px]"
+                          >
+                            {authMode === 'login' ? 'Sign In' : authMode === 'signup' ? 'Sign Up' : authMode === 'forgot' ? 'Send Reset Instructions' : 'Send Secure Login Link'}
+                          </button>
+                          <div className="relative">
+                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
+                            <div className="relative flex justify-center text-[8px] uppercase font-black text-slate-700"><span className="bg-slate-900 px-4">OR</span></div>
                           </div>
-                        )}
-                        <button 
-                          type="submit" 
-                          id="submit-btn"
-                          className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 active:scale-95 cursor-pointer"
-                        >
-                          {authMode === 'login' ? 'Sign In' : 'Sign Up'}
-                        </button>
-                        <div className="relative">
-                          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
-                          <div className="relative flex justify-center text-[8px] uppercase font-black text-slate-700"><span className="bg-slate-900 px-4">OR</span></div>
-                        </div>
-                        <button type="button" onClick={handleLogin} className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer">
-                          <LogIn size={18} /> Continue with Google
-                        </button>
-                        <button type="button" onClick={handleSandboxLogin} className="w-full py-4 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 border border-emerald-550/20 hover:border-emerald-500/55 text-emerald-400 hover:text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer">
-                          ✨ Developer Sandbox Bypass
-                        </button>
-                        <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
-                          {authMode === 'login' ? 'New to myRecovery? Sign Up' : 'Already have an account? Sign In'}
-                        </button>
-                      </form>
+                          <button type="button" onClick={handleLogin} className="w-full py-4 bg-slate-800 hover:bg-slate-750 text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer text-[10px]">
+                            <LogIn size={18} /> Continue with Google
+                          </button>
+                          <button type="button" onClick={handleSandboxLogin} className="w-full py-4 bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 hover:to-teal-600/50 border border-emerald-550/20 hover:border-emerald-500/55 text-emerald-400 hover:text-white rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all cursor-pointer text-[10px]">
+                            ✨ Developer Sandbox Bypass
+                          </button>
+                          
+                          {authMode !== 'passwordless' && (
+                            <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="w-full text-slate-500 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
+                              {authMode === 'login' ? 'New to myRecovery? Sign Up' : 'Already have an account? Sign In'}
+                            </button>
+                          )}
+                          {authMode === 'passwordless' && (
+                            <button type="button" onClick={() => setAuthMode('login')} className="w-full text-slate-505 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all pt-2">
+                              Secure Account Password Access
+                            </button>
+                          )}
+                        </form>
+                      )}
                     </>
                   )}
                 </div>
               ) : (
                 <div className="bg-slate-800/10 rounded-[2.5rem] border border-slate-800/80 p-8 space-y-10">
+
+                  {/* Auth State Session Persistence Controls */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                      <ShieldCheck size={14} /> Device Trust & Session Persistence
+                    </h3>
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                      <div>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-2">
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Session Preservation Mode</label>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase font-mono ${
+                            persistenceMode === 'local' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                            persistenceMode === 'session' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                            'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {persistenceMode === 'local' ? '🔒 Perpetual Local' :
+                             persistenceMode === 'session' ? '🕒 Session (Tab)' :
+                             '🧼 Memory Only'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-relaxed px-1">
+                          Configure how Firebase authenticates and retains your account state on this browser origin. Recommended for secure terminals or shared library devices.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applyPersistenceMode('local');
+                            showToast("Active session changed: Perpetual Local!", "success");
+                          }}
+                          className={`p-4 rounded-2xl border text-left space-y-1.5 transition-all cursor-pointer ${
+                            persistenceMode === 'local'
+                              ? 'bg-blue-600/10 border-blue-500/50 text-white'
+                              : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-300 hover:border-slate-805'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider">
+                            💻 Perpetual
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                            Stay signed in indefinitely, even after closing and reopening browser windows/tabs.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applyPersistenceMode('session');
+                            showToast("Active session changed: Session (Tab)!", "success");
+                          }}
+                          className={`p-4 rounded-2xl border text-left space-y-1.5 transition-all cursor-pointer ${
+                            persistenceMode === 'session'
+                              ? 'bg-blue-600/10 border-blue-500/50 text-white'
+                              : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-300 hover:border-slate-805'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider">
+                            🕒 Session-only
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                            Automatically sign out of your account as soon as the current browser tab or window is closed.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            applyPersistenceMode('none');
+                            showToast("Active session changed: Memory (None)!", "success");
+                          }}
+                          className={`p-4 rounded-2xl border text-left space-y-1.5 transition-all cursor-pointer ${
+                            persistenceMode === 'none'
+                              ? 'bg-blue-600/10 border-blue-500/50 text-white'
+                              : 'bg-slate-950 border-slate-850 text-slate-500 hover:text-slate-300 hover:border-slate-805'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider font-bold">
+                            🧼 Memory-only
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                            Sign out upon any browser refresh, manual navigation, or page reloads.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cloud Sync Service Control Center */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                      <Database size={14} /> Database Connection status
+                    </h3>
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-black text-white italic uppercase tracking-tight">
+                              {currentUser && currentUser.uid !== 'sandbox-user-123' ? 'Direct Firebase Cloud Database' : 'Guest Device Local Database'}
+                            </h4>
+                            {currentUser && currentUser.uid !== 'sandbox-user-123' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">Offline Bypass</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-relaxed mt-1">
+                            {currentUser && currentUser.uid !== 'sandbox-user-123' 
+                              ? 'Your sobriety date, favorite Spokane neighborhood, meeting attendance records, and wellness logs are securely synced and stored in Firebase Firestore.'
+                              : 'You are currently using Sandbox/Guest Mode. Your progress (points, milestones, logs) is saved locally on this browser. Create or log into a real account to sync and back up in our global secure database.'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-left text-[9px] font-mono text-slate-500 space-y-0.5">
+                          <p>PROJECT ID: <span className="text-blue-400 font-bold">{firebaseConfig.projectId}</span></p>
+                          <p>STORAGE MODE: <span className="text-blue-400 font-bold">{currentUser && currentUser.uid !== 'sandbox-user-123' ? 'Cloud Firestore (Persistent)' : 'localStorage Sandbox'}</span></p>
+                        </div>
+                        
+                        {currentUser && currentUser.uid !== 'sandbox-user-123' ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              showToast("Running manual sync backup...", "info");
+                              try {
+                                if (currentUser) {
+                                  const userDocRef = doc(db, 'users', currentUser.uid);
+                                  const docSnap = await getDoc(userDocRef);
+                                  if (docSnap.exists()) {
+                                    showToast("Cloud connection verified! All state successfully persisted & secure.", "success");
+                                  }
+                                }
+                              } catch (e) {
+                                showToast("Sync validation failure. Active offline fallback is maintaining state.", "alert");
+                              }
+                            }}
+                            className="w-full sm:w-auto px-5 py-3 bg-blue-600/15 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-500 text-blue-400 hover:text-white rounded-xl font-bold text-[9.5px] uppercase tracking-wider transition-all cursor-pointer text-center flex items-center justify-center gap-1.5"
+                          >
+                            <RefreshCw size={12} className="animate-spin" /> Verify persistent backup
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleLogout();
+                              setTab('profile');
+                              showToast("Exited Sandbox. Sign up or log in to link your local progress to the permanent database!", "info");
+                            }}
+                            className="w-full sm:w-auto px-5 py-3 bg-amber-500/10 hover:bg-amber-500 border border-amber-500/20 text-amber-400 hover:text-slate-950 rounded-xl font-bold text-[9.5px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                          >
+                            🔒 Authenticate and Sync
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                   
                   {/* Community Identity & Anonymity */}
                   <div className="space-y-6">

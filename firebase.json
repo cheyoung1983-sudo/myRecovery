@@ -1,0 +1,17 @@
+{
+  "auth": {
+    "providers": {
+      "anonymous": true,
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Spokane Recovery Portal",
+        "supportEmail": "cheyoung1983@gmail.com",
+        "authorizedRedirectUris": [
+          "https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app",
+          "https://ais-pre-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app",
+          "http://localhost:3000"
+        ]
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ export interface Meeting {
   sponsors?: string[]; // IDs of sponsors who attend (strings)
   lat: number;
   lng: number;
+  distance?: number;
 }
 
 export interface Sponsor {
@@ -39,6 +40,7 @@ export interface AttendanceRecord {
   meetingId: string;
   meetingName: string;
   date: string;
+  timestamp?: any;
 }
 
 export interface Message {
@@ -58,6 +60,7 @@ export interface ChatSession {
   typingStatus?: Record<string, boolean>;
   userName?: string;
   mentorName?: string;
+  sponsorName?: string;
 }
 
 export interface Review {

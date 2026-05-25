@@ -29,6 +29,11 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({ meeting, onSelect }) =
               {meeting.format}
             </span>
           )}
+          {meeting.distance !== undefined && (
+            <span className="text-[10px] font-extrabold px-2 py-1 bg-emerald-600/10 text-emerald-400 rounded border border-emerald-600/20 uppercase tracking-tight">
+              🎯 {meeting.distance.toFixed(1)} mi away
+            </span>
+          )}
         </div>
         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{meeting.neighborhood}</span>
       </div>

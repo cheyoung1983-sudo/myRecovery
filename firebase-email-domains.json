@@ -1,0 +1,39 @@
+{
+  "customDomain": "mail.spokanerecovery.org",
+  "status": "pending_verification",
+  "supportEmail": "support@spokanerecovery.org",
+  "fromName": "Spokane Recovery Resource Hub",
+  "multiTenancyEnabled": true,
+  "tenants": [
+    {
+      "id": "spk-north-division-t1",
+      "name": "Spokane North Wellness Tenant",
+      "emailSendingConfigInherited": false
+    },
+    {
+      "id": "valley-care-hub-t2",
+      "name": "Valley Care Outreach Clinic Tenant",
+      "emailSendingConfigInherited": true
+    }
+  ],
+  "dnsRecords": [
+    {
+      "type": "TXT",
+      "host": "@",
+      "value": "v=spf1 include:spf.firebasemail.com ~all",
+      "status": "missing"
+    },
+    {
+      "type": "TXT",
+      "host": "firebase-aperture._domainkey",
+      "value": "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQ9FADBCgYEAmqS6S3...",
+      "status": "missing"
+    },
+    {
+      "type": "CNAME",
+      "host": "mail.spokanerecovery.org",
+      "value": "custom-domain.firebaseapp.com",
+      "status": "missing"
+    }
+  ]
+}
