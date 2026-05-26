@@ -1058,7 +1058,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: [
           ...history.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'model',
@@ -1085,7 +1085,7 @@ async function startServer() {
       const logsSummary = moodLogs.map((l: any) => `- ${new Date(l.timestamp).toLocaleDateString()}: ${l.mood} (${l.note || 'No note'})`).join("\n");
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: `Analyze these recent recovery mood logs and provide a 2-3 sentence optimistic, strength-based reflection or summary of their progress. Focus on patterns of resilience.\n\nLogs:\n${logsSummary}`,
         config: {
           systemInstruction: "You are a recovery coach focused on positive reinforcement and identifying strength patterns.",
@@ -1131,7 +1131,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are a professional recovery matching algorithm. You provide highly accurate, compassionate matches in strict JSON format.",
@@ -1156,7 +1156,7 @@ async function startServer() {
       Return a JSON object: { "vibe": "stable"|"anxious"|"declining", "recommendation": "string", "triggerVibeCheck": boolean }`;
       
       const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: prompt
       });
       res.json(JSON.parse(result.text.replace(/```json|```/g, '')));
@@ -1191,7 +1191,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are Sober Spokane Assistant, a helpful peer-support coach. You provide clear, concise, and highly supportive recovery insights from form answer logs.",
@@ -1222,7 +1222,7 @@ async function startServer() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: `User Query: "${query}"\n\nFind relevant 12-step literature to help with this concern.`,
         config: {
           systemInstruction,
