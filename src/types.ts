@@ -93,6 +93,14 @@ export interface MentorReview {
   timestamp: any;
 }
 
+export interface NotificationSettings {
+  meetingReminders: boolean;
+  newMessages: boolean;
+  soberMilestones: boolean;
+  sosAlerts: boolean;
+  dailyReflection: boolean;
+}
+
 export interface UserProfile {
   email: string;
   name: string;
@@ -103,6 +111,7 @@ export interface UserProfile {
   role: 'user' | 'mentor' | 'admin';
   fcmToken?: string;
   notificationsEnabled?: boolean;
+  notificationSettings?: NotificationSettings;
   alias?: string;
   isCrisisAvailable?: boolean;
   emergencyMentorId?: string;
@@ -127,6 +136,11 @@ export interface SpokaneResource {
   website?: string;
   description: string;
   tags?: string[];
+  barrierLevel?: string;
+  intakeProcedure?: string;
+  lastVerified?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface MeetingBuddy {

@@ -63,7 +63,8 @@ const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/favicon.ico',
-  '/manifest.json'
+  '/manifest.json',
+  '/api/spokane-resources'
 ];
 
 self.addEventListener('install', (event) => {
@@ -156,7 +157,7 @@ self.addEventListener('fetch', (event) => {
       // Only handle GET requests and bypass dynamic APIs/third-party backends
       if (
         req.method !== 'GET' || 
-        req.url.includes('/api/') ||
+        (req.url.includes('/api/') && !req.url.includes('/api/spokane-resources')) ||
         req.url.includes('firestore.googleapis.com') ||
         req.url.includes('google-analytics.com') ||
         req.url.includes('firebase')

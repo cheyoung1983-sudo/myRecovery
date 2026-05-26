@@ -35,7 +35,7 @@ import {
   Timestamp, or, increment
 } from 'firebase/firestore';
 
-import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry } from './types';
+import { Meeting, Sponsor, AttendanceRecord, Message, ChatSession, Resource, UserProfile, MoodEntry, NotificationSettings } from './types';
 import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS, SUPER_ADMIN_EMAIL, SPOKANE_RESOURCES } from './constants';
 const firebaseConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0922849103'
@@ -730,9 +730,9 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Passwordless completion error:", err);
-      const readableError = err.message || String(err);
-      setAuthError(readableError);
-      showToast(`Email link sign-in failed: ${readableError}`, "alert");
+      const parsedError = parseAuthError(err);
+      setAuthError(parsedError);
+      showToast(`Email link sign-in failed: ${parsedError}`, "alert");
     } finally {
       setIsAuthLoading(false);
     }
@@ -1048,6 +1048,41 @@ export default function App() {
     }, 1200);
   };
 
+  const handleSandboxLoginWithEmail = (customEmail: string) => {
+    const simulatedUser = {
+      uid: 'sandbox-user-' + customEmail.replace(/[^a-zA-Z0-9]/g, '-'),
+      email: customEmail,
+      displayName: customEmail.split('@')[0],
+      emailVerified: true,
+      photoURL: '',
+      isAnonymous: false,
+    } as any;
+    
+    setCurrentUser(simulatedUser);
+
+    const savedProfile = localStorage.getItem('sober_spokane_userProfile_' + customEmail);
+    const defaultProfile: UserProfile = {
+      email: customEmail,
+      name: customEmail.split('@')[0] + ' (Sandbox)',
+      photoURL: '',
+      sobrietyDate: '2023-01-15',
+      recoveryNeeds: ['Meetings', 'Peer Support'],
+      neighborhood: 'Downtown Spokane',
+      role: 'user',
+      points: 120,
+      badges: ['First Step']
+    };
+    const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
+    setUserProfile(finalProfile);
+    setUserNeeds(finalProfile.recoveryNeeds || []);
+    setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
+    setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
+
+    setIsSuperAdmin(customEmail === SUPER_ADMIN_EMAIL);
+    setIsAuthLoading(false);
+    showToast(`Welcome! Logged in with Simulated Profile for ${customEmail}`, "success");
+  };
+
   const handleSandboxLogin = () => {
     const simulatedUser = {
       uid: 'sandbox-user-123',
@@ -1085,49 +1120,55 @@ export default function App() {
 
   const parseAuthError = (e: any): string => {
     if (!e) return "An unknown authentication error occurred.";
-    const errCode = e.code || '';
-    const errMsg = e.message || '';
+    const errCode = String(e.code || '');
+    const errMsg = String(e.message || '');
     const errStr = String(e || '');
+    const errJson = (() => {
+      try {
+        return JSON.stringify(e);
+      } catch (_) {
+        return '';
+      }
+    })();
+    const combined = (errCode + ' ' + errMsg + ' ' + errStr + ' ' + errJson).toLowerCase();
 
     if (
-      errCode === 'auth/recaptcha-verify-failed' || 
-      errMsg.includes('recaptcha') || 
-      errStr.includes('recaptcha')
+      combined.includes('recaptcha') ||
+      combined.includes('captcha')
     ) {
       return 'recaptcha-verify-failed';
     }
 
     if (
-      errCode === 'auth/internal-error' || 
-      errMsg.includes('internal-error') || 
-      errMsg.includes('cross-origin') || 
-      errMsg.includes('iframe')
+      combined.includes('internal-error') || 
+      combined.includes('cross-origin') || 
+      combined.includes('iframe')
     ) {
       return 'iframe-restrictions';
     }
 
     if (
-      errCode.includes('requests-from-referer') || 
-      errMsg.includes('requests-from-referer') || 
-      errStr.includes('requests-from-referer') ||
-      errCode.includes('referer') || 
-      errMsg.includes('referer') || 
-      errStr.includes('referer') ||
-      errMsg.includes('are-blocked') ||
-      errStr.includes('are-blocked')
+      combined.includes('referer') || 
+      combined.includes('referrer') || 
+      combined.includes('requests-from-referer') ||
+      combined.includes('are-blocked') ||
+      combined.includes('are_blocked') ||
+      combined.includes('is-blocked') ||
+      combined.includes('is_blocked')
     ) {
       return 'gcp-referer-blocked';
     }
 
     if (
-      errCode === 'auth/unauthorized-domain' || 
-      errMsg.includes('unauthorized-domain') || 
-      errCode === 'auth/unauthorized-client'
+      combined.includes('unauthorized-domain') || 
+      combined.includes('unauthorized-client') ||
+      combined.includes('unauthorized_domain') || 
+      combined.includes('unauthorized_client')
     ) {
       return 'unauthorized-domain';
     }
 
-    return errMsg || errCode || String(e);
+    return e.message || e.code || String(e);
   };
 
   const handleLogin = async () => {
@@ -2602,22 +2643,30 @@ export default function App() {
                               </p>
                               <div className="space-y-1.5 pt-2 border-t border-slate-800">
                                 <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">How to authorize & resolve:</p>
-                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1 font-semibold">
+                                <ol className="list-decimal list-inside text-[9px] text-slate-400 space-y-1.5 font-semibold">
                                   <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">GCP Credentials Console</a></li>
-                                  <li>Click on the entry under <strong>API Keys</strong> that belongs to your app (usually titled "Browser key")</li>
-                                  <li>Under <strong>Application restrictions</strong>, ensure you either:</li>
-                                  <ul className="list-disc list-inside pl-3 text-slate-500 space-y-0.5 font-medium text-[8px]">
-                                    <li>Add <code className="text-white font-mono bg-slate-950 px-1 rounded">*.run.app</code> and <code className="text-white font-mono bg-slate-950 px-1 rounded">localhost</code> to the allowed websites.</li>
-                                    <li>Or temporarily set Website restrictions to <strong className="text-white">"None"</strong> to preview successfully.</li>
-                                  </ul>
+                                  <li>Click on your API Key (usually named <strong className="text-white">Browser key</strong> or similar).</li>
+                                  <li>Under <strong className="text-white">Website restrictions</strong>, add these exact entries:</li>
+                                  <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 font-mono text-[9px] text-blue-400 space-y-1 text-left mt-1 select-all break-all">
+                                    <div>{typeof window !== 'undefined' ? `${window.location.origin}/*` : 'https://ais-dev-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/*'}</div>
+                                    <div>https://ais-pre-jrgpfwqqocb4ncftwkz3ja-367327296310.us-west2.run.app/*</div>
+                                    <div>http://localhost:3000/*</div>
+                                  </div>
+                                  <li>Or temporarily set restrictions to <strong className="text-white">"None"</strong> to test or prototype.</li>
                                 </ol>
                               </div>
                               <button
                                 type="button"
-                                onClick={handleSandboxLogin}
-                                className="w-full py-3 bg-emerald-600/30 hover:bg-emerald-600 border border-emerald-555/20 text-emerald-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                                onClick={() => {
+                                  if (email) {
+                                    handleSandboxLoginWithEmail(email);
+                                  } else {
+                                    handleSandboxLogin();
+                                  }
+                                }}
+                                className="w-full py-3 bg-emerald-600/30 hover:bg-emerald-600 border border-emerald-555/20 text-emerald-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center animate-pulse"
                               >
-                                ⚡ Bypass domain block & Enter sandbox mode
+                                ⚡ Bypass block & Log in as {email || "Sandbox User"}
                               </button>
                             </div>
                           ) : authError === 'unauthorized-domain' ? (
@@ -2642,10 +2691,16 @@ export default function App() {
                               </div>
                               <button
                                 type="button"
-                                onClick={handleSandboxLogin}
-                                className="w-full py-3 bg-amber-600/30 hover:bg-amber-600 border border-amber-500/30 hover:border-amber-500 text-amber-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center"
+                                onClick={() => {
+                                  if (email) {
+                                    handleSandboxLoginWithEmail(email);
+                                  } else {
+                                    handleSandboxLogin();
+                                  }
+                                }}
+                                className="w-full py-3 bg-amber-600/30 hover:bg-amber-600 border border-amber-500/30 hover:border-amber-500 text-amber-400 hover:text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer text-center animate-pulse"
                               >
-                                ⚡ Bypass domain block & Enter sandbox mode
+                                ⚡ Bypass domain block & Log in as {email || "Sandbox User"}
                               </button>
                             </div>
                           ) : (
@@ -3258,6 +3313,106 @@ export default function App() {
                       >
                         <motion.div layout className="w-6 h-6 bg-white rounded-full shadow-sm" />
                       </button>
+                    </div>
+
+                    {/* Granular Notifications Settings Sub-Menu */}
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-5">
+                      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                        <Settings2 size={14} className="text-blue-400" />
+                        <div>
+                          <h4 className="text-xs font-black uppercase tracking-wider text-white">Granular Alert Channels</h4>
+                          <p className="text-[9px] text-slate-505 uppercase font-black leading-none mt-1">Configure individual push triggers</p>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-slate-800/60 text-left">
+                        {[
+                          {
+                            key: 'meetingReminders',
+                            title: 'Meeting Reminders',
+                            description: 'Alerts 15 mins before your logged recovery meetings start.',
+                            icon: <Calendar size={14} className="text-blue-400" />
+                          },
+                          {
+                            key: 'newMessages',
+                            title: 'Chat Messages & Replies',
+                            description: 'Instant indicators when a buddy or mentor sends you a message.',
+                            icon: <MessageCircle size={14} className="text-emerald-400" />
+                          },
+                          {
+                            key: 'soberMilestones',
+                            title: 'Sober Milestones',
+                            description: 'Receive notifications celebrating your milestone landmarks & badges.',
+                            icon: <Trophy size={14} className="text-amber-400" />
+                          },
+                          {
+                            key: 'sosAlerts',
+                            title: 'Emergency SOS Broadcasts',
+                            description: 'Crisis/SOS beacon updates with peer responders nearby.',
+                            icon: <ShieldAlert size={14} className="text-rose-400" />
+                          },
+                          {
+                            key: 'dailyReflection',
+                            title: 'Daily Mindful Reflections',
+                            description: 'A quiet morning recovery daily prompt or mindfulness briefing.',
+                            icon: <Sparkles size={14} className="text-violet-400" />
+                          }
+                        ].map(({ key, title, description, icon }) => {
+                          const currentSettings = userProfile?.notificationSettings || {
+                            meetingReminders: true,
+                            newMessages: true,
+                            soberMilestones: true,
+                            sosAlerts: true,
+                            dailyReflection: false,
+                          };
+                          const isEnabled = currentSettings[key as keyof NotificationSettings] ?? false;
+                          const isMasterEnabled = userProfile?.notificationsEnabled && notificationPermission === 'granted';
+
+                          return (
+                            <div key={key} className="py-4 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2.5 bg-slate-950/85 border border-slate-850 rounded-xl mt-0.5">
+                                  {icon}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-bold text-white transition-all">{title}</p>
+                                  <p className="text-[10px] text-slate-500 leading-normal mt-0.5">{description}</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={!isMasterEnabled}
+                                onClick={() => {
+                                  const updated = {
+                                    ...currentSettings,
+                                    [key]: !isEnabled
+                                  };
+                                  handleUpdateProfile({ notificationSettings: updated });
+                                  showToast(`${title} alert setting updated!`, "success");
+                                }}
+                                className={`w-12 h-7 rounded-full p-0.5 transition-all flex shrink-0 ${
+                                  !isMasterEnabled
+                                    ? 'bg-slate-850 justify-start opacity-40 cursor-not-allowed'
+                                    : isEnabled
+                                    ? 'bg-blue-600 justify-end cursor-pointer'
+                                    : 'bg-slate-800 justify-start cursor-pointer'
+                                }`}
+                              >
+                                <motion.div layout className="w-6 h-6 bg-white rounded-full shadow-md" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {!(userProfile?.notificationsEnabled && notificationPermission === 'granted') && (
+                        <div className="mt-2 p-3 bg-amber-500/5 border border-amber-500/10 rounded-xl flex items-start gap-2.5 text-[9px] text-amber-505 leading-normal font-semibold">
+                          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                          <span>
+                            Please enable the master **Push Notifications** switch above to activate individual granular preference settings.
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* FCM Diagnostic Client Module matching Java's FirebaseMessaging.getInstance().getToken() */}
