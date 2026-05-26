@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, connectAuthEmulator } from 'firebase/auth';
-import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp, connectFirestoreEmulator, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, doc, collection, onSnapshot, query, where, setDoc, updateDoc, addDoc, getDoc, serverTimestamp, orderBy, getDocFromServer, Timestamp, connectFirestoreEmulator, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
 import { getAnalytics, isSupported, setAnalyticsCollectionEnabled } from 'firebase/analytics';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
@@ -53,21 +53,10 @@ if (typeof window !== 'undefined') {
 
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  })
 }, import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId);
-
-if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).then(() => {
-    console.log('[Firestore Offline Cache] IndexedDB offline persistence enabled.');
-  }).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('[Firestore Offline Cache] Multiple tabs open. Persistence failed to enable.');
-    } else if (err.code === 'unimplemented') {
-      console.warn('[Firestore Offline Cache] Browser does not support persistence features.');
-    } else {
-      console.warn('[Firestore Offline Cache] Failed to enable persistence:', err);
-    }
-  });
-}
 
 export const auth = getAuth(app);
 
