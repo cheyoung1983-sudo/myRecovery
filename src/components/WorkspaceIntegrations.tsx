@@ -3,7 +3,7 @@ import {
   CheckSquare, MessageSquare, FileText, Plus, Send, Check, 
   ExternalLink, Sparkles, RefreshCw, AlertCircle, Share2, Clipboard, 
   AlertTriangle, Heart, Calendar, ArrowRight, Mail, Users, Video, Grid, HardDrive,
-  FolderOpen, Presentation, X, Globe, ShieldCheck
+  FolderOpen, Presentation, X, Globe, ShieldCheck, Lightbulb, Trash2, StickyNote
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -21,7 +21,85 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
   const [successMsg, setSuccessMsg] = useState('');
 
   // Active Integration Navigation Tab
-  const [activeTab, setActiveTab] = useState<'daily' | 'forms' | 'drive' | 'gmail' | 'sheets' | 'meet' | 'slides'>('daily');
+  const [activeTab, setActiveTab] = useState<'daily' | 'forms' | 'drive' | 'gmail' | 'sheets' | 'meet' | 'slides' | 'keep'>('daily');
+
+  // Google Keep States
+  const [keepNotes, setKeepNotes] = useState<any[]>(() => {
+    const saved = localStorage.getItem('myrecovery_saved_keep_notes');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing saved keep notes:', e);
+      }
+    }
+    return [
+      {
+        id: 'keep-1',
+        title: '🌟 Daily Affirmation',
+        content: 'I am strong, I am worthy, and I am choosing recovery one day at a time. Spokane Recovery is here for me.',
+        tag: '#DailyRoutine',
+        updatedAt: new Date().toLocaleString()
+      },
+      {
+        id: 'keep-2',
+        title: '🌱 Survival Coping Strategies',
+        content: 'When cravings strike:\n1. 5-5-5 Deep Breathing exercises.\n2. Tap the SOS broadcast button.\n3. Call Sarah (Sponsor) immediately.',
+        tag: '#CopingStrategy',
+        updatedAt: new Date().toLocaleString()
+      },
+      {
+        id: 'keep-3',
+        title: '📞 Emergency Contacts',
+        content: '- Sponsor Sarah: (509) 555-0143\n- Spokane Crisis S.O.S. Line: (509) 838-4428\n- Peer Support Center: (509) 458-7454',
+        tag: '#SupportCircle',
+        updatedAt: new Date().toLocaleString()
+      }
+    ];
+  });
+  const [newKeepNoteTitle, setNewKeepNoteTitle] = useState('');
+  const [newKeepNoteContent, setNewKeepNoteContent] = useState('');
+  const [newKeepNoteTag, setNewKeepNoteTag] = useState('#General');
+
+  // Sync Keep Notes state changes to Local Storage
+  useEffect(() => {
+    localStorage.setItem('myrecovery_saved_keep_notes', JSON.stringify(keepNotes));
+  }, [keepNotes]);
+
+  const handleAddKeepNote = () => {
+    if (!newKeepNoteContent.trim()) return;
+    const newNote = {
+      id: `keep-${Date.now()}`,
+      title: newKeepNoteTitle.trim() || 'Untitled Note Log',
+      content: newKeepNoteContent.trim(),
+      tag: newKeepNoteTag || '#General',
+      updatedAt: new Date().toLocaleString()
+    };
+    setKeepNotes(prev => [newNote, ...prev]);
+    setNewKeepNoteTitle('');
+    setNewKeepNoteContent('');
+    setNewKeepNoteTag('#General');
+    setSuccessMsg('Note successfully saved to your Google Keep Sandbox!');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleDeleteKeepNote = (id: string) => {
+    const confirmed = window.confirm('Are you sure you want to delete this recovery Note log?');
+    if (!confirmed) return;
+    setKeepNotes(prev => prev.filter(n => n.id !== id));
+    setSuccessMsg('Deleted Note safely.');
+    setTimeout(() => setSuccessMsg(''), 2000);
+  };
+
+  const handleCopyToKeep = (note: any) => {
+    const fullText = `${note.title}\n\n${note.content}\n\nTag: ${note.tag}\n-- Sent via Spokane Recovery Network Tracker`;
+    navigator.clipboard.writeText(fullText);
+    setSuccessMsg('Copied note details to clipboard! Redirecting to Google Keep...');
+    setTimeout(() => {
+      setSuccessMsg('');
+      window.open('https://keep.google.com/', '_blank');
+    }, 1500);
+  };
 
   // Google Slides States
   const [presentationId, setPresentationId] = useState('');
@@ -1396,6 +1474,17 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
             >
               <Presentation size={13} /> Slides Milestone Deck
             </button>
+
+            <button
+              onClick={() => setActiveTab('keep')}
+              className={`px-4 py-3 rounded-t-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2 ${
+                activeTab === 'keep' 
+                  ? 'bg-yellow-500/10 text-yellow-500 border-b-2 border-yellow-500' 
+                  : 'text-slate-400 hover:text-slate-250'
+              }`}
+            >
+              <Lightbulb size={13} /> Keep Journaling Notes
+            </button>
           </div>
 
           {/* TAB CONTENT - DAILY CHECKLISTS & FORUMS */}
@@ -2574,6 +2663,159 @@ export const WorkspaceIntegrations: React.FC<WorkspaceIntegrationsProps> = ({ da
                   <p className="text-[8px] text-slate-500 leading-normal border-t border-slate-900/60 pt-3 uppercase">
                     Creates fully stylized title slides, stats tables, and reflection summaries automatically.
                   </p>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT - GOOGLE KEEP JOURNAL NOTEBOOK */}
+          {activeTab === 'keep' && (
+            <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800 space-y-6 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-yellow-500/10 rounded-2xl text-yellow-500 border border-yellow-500/10">
+                    <Lightbulb size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white uppercase tracking-wider">Google Keep Recovery Notes</h3>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Draft, store, and seamlessly sync your affirmations and support logs with Google Keep</p>
+                  </div>
+                </div>
+                <a 
+                  href="https://keep.google.com" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 text-yellow-500 hover:text-yellow-400 border border-slate-700 hover:border-yellow-500/30 rounded-xl text-[9px] font-black uppercase flex items-center gap-1 transition-all"
+                >
+                  Launch official Keep <ExternalLink size={10} />
+                </a>
+              </div>
+
+              {/* Keep Sandbox Overview Alert Banner */}
+              <div className="p-4 bg-yellow-500/5 border border-yellow-500/10 rounded-2xl text-[10px] text-yellow-500/90 leading-relaxed font-semibold">
+                💡 <strong className="text-yellow-400 uppercase font-bold tracking-wider">Developer Notice:</strong> Google restricts public Google Keep API access exclusively to enterprise workspace accounts. For standard Google Accounts, this dashboard serves as an interactive sandbox to organize notes locally, and provides a 1-click CLIPBOARD & REDIRECT integration to transfer notes directly into Keep!
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Compose New Note Column */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="bg-slate-950/40 p-5 rounded-2xl border border-slate-800/80 space-y-4">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-900 pb-2">Draft New Recovery Note</h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-black uppercase tracking-wider block mb-1">Title</label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Morning Journaling..."
+                          value={newKeepNoteTitle}
+                          onChange={(e) => setNewKeepNoteTitle(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800/60 focus:border-yellow-500/40 p-3 rounded-xl text-xs text-white placeholder-slate-700 outline-none transition-colors"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-black uppercase tracking-wider block mb-1 font-bold">Category Tag</label>
+                        <select
+                          value={newKeepNoteTag}
+                          onChange={(e) => setNewKeepNoteTag(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800/60 focus:border-yellow-500/40 p-3 rounded-xl text-xs text-white outline-none transition-colors"
+                        >
+                          <option value="#DailyRoutine">#DailyRoutine</option>
+                          <option value="#CopingStrategy">#CopingStrategy</option>
+                          <option value="#SupportCircle">#SupportCircle</option>
+                          <option value="#TriggerLog">#TriggerLog</option>
+                          <option value="#Milestone">#Milestone</option>
+                          <option value="#General">#General</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-black uppercase tracking-wider block mb-1 font-bold">Content</label>
+                        <textarea
+                          placeholder="Write down your thoughts, reminders, or goals..."
+                          value={newKeepNoteContent}
+                          onChange={(e) => setNewKeepNoteContent(e.target.value)}
+                          rows={4}
+                          className="w-full bg-slate-950 border border-slate-800/60 focus:border-yellow-500/40 p-3 rounded-xl text-xs text-white placeholder-slate-700 outline-none transition-colors resize-none"
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleAddKeepNote}
+                        disabled={!newKeepNoteContent.trim()}
+                        className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                          newKeepNoteContent.trim()
+                            ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-950 shadow-md shadow-yellow-500/10'
+                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <Plus size={13} /> Save to Sandbox
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Notes Sandbox List Column */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">My Saved Notes ({keepNotes.length})</h4>
+                    <span className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Saved in local workspace cache</span>
+                  </div>
+
+                  <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                    {keepNotes.map((note) => (
+                      <div 
+                        key={note.id}
+                        className="p-5 bg-slate-950/45 border border-slate-800/80 rounded-2xl space-y-3.5 hover:border-yellow-500/10 transition-colors relative group"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <h5 className="text-xs font-black text-white uppercase tracking-wider">{note.title}</h5>
+                            <span className="inline-block px-2 py-0.5 bg-yellow-500/15 text-yellow-500 rounded-md text-[8px] font-black uppercase tracking-widest font-mono border border-yellow-500/5">
+                              {note.tag}
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 leading-none">
+                            <button
+                              onClick={() => handleCopyToKeep(note)}
+                              className="p-1 px-2.5 bg-yellow-500/10 hover:bg-yellow-500 text-yellow-500 hover:text-slate-950 rounded-lg text-[8px] font-black uppercase tracking-wider border border-yellow-500/10 transition-all flex items-center gap-1 cursor-pointer"
+                              title="Copy and send to Google Keep"
+                            >
+                              <StickyNote size={10} /> Send to Keep
+                            </button>
+                            <button
+                              onClick={() => handleDeleteKeepNote(note.id)}
+                              className="p-1.5 bg-transparent hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 rounded-lg transition-all cursor-pointer"
+                              title="Delete Note"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-400 leading-relaxed font-semibold whitespace-pre-wrap">
+                          {note.content}
+                        </p>
+
+                        <div className="flex justify-between items-center text-[8px] text-slate-600 border-t border-slate-900/60 pt-2 font-mono">
+                          <span>UPDATED: {note.updatedAt}</span>
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity">ID: {note.id}</span>
+                        </div>
+                      </div>
+                    ))}
+
+                    {keepNotes.length === 0 && (
+                      <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800/80 bg-slate-950/20 text-slate-500 space-y-2">
+                        <Lightbulb size={24} className="mx-auto text-slate-600 animate-pulse" />
+                        <p className="text-[10px] font-bold uppercase tracking-wider">No recovery notes drafted yet</p>
+                        <p className="text-[9px] text-slate-600 leading-relaxed font-medium">Use the left composer to begin organizing coping tactics, reflections, and contacts.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
               </div>
