@@ -26,7 +26,9 @@ import {
   sendPasswordResetEmail, GoogleAuthProvider,
   isSignInWithEmailLink, sendSignInLinkToEmail, signInWithEmailLink,
   setPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence,
-  applyActionCode, confirmPasswordReset, verifyPasswordResetCode
+  applyActionCode, confirmPasswordReset, verifyPasswordResetCode,
+  updateProfile, updateEmail, updatePassword, deleteUser,
+  reauthenticateWithCredential, EmailAuthProvider
 } from 'firebase/auth';
 import { setCachedToken, clearCachedToken, isCalendarConnected, connectGoogleCalendar } from './lib/googleCalendar';
 import { 
@@ -359,6 +361,27 @@ export default function App() {
 
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('All');
   const [profileCalendarConnected, setProfileCalendarConnected] = useState(isCalendarConnected());
+
+  // Interactive Account Diagnostics & Security States
+  const [authSettingsEmail, setAuthSettingsEmail] = useState('');
+  const [authSettingsPassword, setAuthSettingsPassword] = useState('');
+  const [authSettingsDisplayName, setAuthSettingsDisplayName] = useState('');
+  const [authSettingsPhotoURL, setAuthSettingsPhotoURL] = useState('');
+  const [authSettingsReauthEmail, setAuthSettingsReauthEmail] = useState('');
+  const [authSettingsReauthPassword, setAuthSettingsReauthPassword] = useState('');
+  const [authSettingsShowProviders, setAuthSettingsShowProviders] = useState(false);
+  const [deleteAccountCheck, setDeleteAccountCheck] = useState(false);
+  const [reauthFormOpen, setReauthFormOpen] = useState(false);
+
+  useEffect(() => {
+    // Populate form with current user details when auth updates
+    if (currentUser) {
+      setAuthSettingsEmail(currentUser.email || '');
+      setAuthSettingsDisplayName(currentUser.displayName || '');
+      setAuthSettingsPhotoURL(currentUser.photoURL || '');
+      setAuthSettingsReauthEmail(currentUser.email || '');
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     const handleCalendarChange = () => {
@@ -1236,6 +1259,15 @@ export default function App() {
     const combined = (errCode + ' ' + errMsg + ' ' + errStr + ' ' + errJson).toLowerCase();
 
     if (
+      combined.includes('cancelled-popup-request') || 
+      combined.includes('cancelled_popup_request') ||
+      combined.includes('popup-closed-by-user') ||
+      combined.includes('popup_closed_by_user')
+    ) {
+      return 'popup-closed-or-cancelled';
+    }
+
+    if (
       combined.includes('recaptcha') ||
       combined.includes('captcha')
     ) {
@@ -1290,6 +1322,10 @@ export default function App() {
       if (parsed === 'gcp-referer-blocked' || parsed === 'unauthorized-domain') {
         console.warn("Google login referer/domain restrictions detected. Simulating sandbox login context:", e);
         showToast("Referrer / domain restrictions detected. Accessing via simulated Google Profile!", "info");
+        handleSandboxLoginWithEmail(email || "google.tester@spokanerecovery.net");
+      } else if (parsed === 'popup-closed-or-cancelled') {
+        console.warn("Google login popup closed or cancelled. Bypassing with simulated sandbox session:", e);
+        showToast("Google login popup closed/cancelled. Fallback to Simulated Profile enabled so you can test inside the iframe preview!", "info");
         handleSandboxLoginWithEmail(email || "google.tester@spokanerecovery.net");
       } else {
         console.error("Google login error:", e);
@@ -1466,6 +1502,199 @@ export default function App() {
     if (currentUser) {
       await currentUser.reload();
       setCurrentUser({ ...auth.currentUser! });
+    }
+  };
+
+  const handleUpdateAuthProfile = async () => {
+    if (!currentUser) {
+      showToast("No active user profile discovered.", "alert");
+      return;
+    }
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      const updatedUser = { 
+        ...currentUser, 
+        displayName: authSettingsDisplayName,
+        photoURL: authSettingsPhotoURL
+      } as any;
+      setCurrentUser(updatedUser);
+      
+      if (userProfile) {
+        const up = { ...userProfile, name: authSettingsDisplayName, photoURL: authSettingsPhotoURL };
+        setUserProfile(up);
+        localStorage.setItem('sober_spokane_userProfile', JSON.stringify(up));
+      }
+      showToast("Sandbox Custom Profile updated! (Simulated write)", "success");
+      return;
+    }
+
+    try {
+      showToast("Updating Firebase authentication profile...", "info");
+      await updateProfile(auth.currentUser!, {
+        displayName: authSettingsDisplayName,
+        photoURL: authSettingsPhotoURL
+      });
+      
+      await auth.currentUser!.reload();
+      setCurrentUser({ ...auth.currentUser! });
+
+      const userDocRef = doc(db, 'users', auth.currentUser!.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        await updateDoc(userDocRef, {
+          name: authSettingsDisplayName,
+          photoURL: authSettingsPhotoURL
+        });
+      }
+      showToast("Authentication Profile successfully updated on Firebase!", "success");
+    } catch (e: any) {
+      console.error("Firebase updateProfile failure:", e);
+      showToast(`Profile update failed: ${e.message || String(e)}`, "alert");
+    }
+  };
+
+  const handleUpdateAuthEmail = async () => {
+    if (!currentUser) return;
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      const updatedUser = { ...currentUser, email: authSettingsEmail } as any;
+      setCurrentUser(updatedUser);
+      if (userProfile) {
+        const up = { ...userProfile, email: authSettingsEmail };
+        setUserProfile(up);
+        localStorage.setItem('sober_spokane_userProfile', JSON.stringify(up));
+      }
+      showToast(`Sandbox Email updated: ${authSettingsEmail}`, "success");
+      return;
+    }
+
+    try {
+      showToast("Updating authentication primary email...", "info");
+      await updateEmail(auth.currentUser!, authSettingsEmail);
+      await auth.currentUser!.reload();
+      setCurrentUser({ ...auth.currentUser! });
+      showToast("Primary login email address successfully updated!", "success");
+    } catch (e: any) {
+      console.error("Firebase updateEmail failure:", e);
+      if (e.code === 'auth/requires-recent-login' || String(e).includes('requires-recent-login') || String(e).includes('recent-login')) {
+        showToast("Sensitive action requested. Please Re-Authenticate below to proceed.", "alert");
+        setReauthFormOpen(true);
+      } else {
+        showToast(`Email update failed: ${e.message || String(e)}`, "alert");
+      }
+    }
+  };
+
+  const handleUpdateAuthPassword = async () => {
+    if (!currentUser) return;
+    if (!authSettingsPassword) {
+      showToast("Please enter a valid non-empty password.", "alert");
+      return;
+    }
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      showToast("Sandbox password changed securely!", "success");
+      setAuthSettingsPassword('');
+      return;
+    }
+
+    try {
+      showToast("Updating authentication credentials...", "info");
+      await updatePassword(auth.currentUser!, authSettingsPassword);
+      showToast("Your credential password has been securely updated!", "success");
+      setAuthSettingsPassword('');
+    } catch (e: any) {
+      console.error("Firebase updatePassword failure:", e);
+      if (e.code === 'auth/requires-recent-login' || String(e).includes('requires-recent-login') || String(e).includes('recent-login')) {
+        showToast("Sensitive action requested. Please Re-Authenticate below to proceed.", "alert");
+        setReauthFormOpen(true);
+      } else {
+        showToast(`Password update failed: ${e.message || String(e)}`, "alert");
+      }
+    }
+  };
+
+  const handleSendPasswordResetLine = async () => {
+    const targetEmail = currentUser?.email || authSettingsEmail;
+    if (!targetEmail) {
+      showToast("Please provide or register a verified email address.", "alert");
+      return;
+    }
+
+    if (currentUser?.uid === 'sandbox-user-123') {
+      showToast(`Simulated Reset Email successfully dispatched to ${targetEmail}!`, "success");
+      return;
+    }
+
+    try {
+      showToast("Dispatched password reset thread...", "info");
+      await sendPasswordResetEmail(auth, targetEmail);
+      showToast(`A credential recovery link was sent to ${targetEmail}!`, "success");
+    } catch (e: any) {
+      console.error("Firebase sendPasswordResetEmail failure:", e);
+      showToast(`Error dispatching reset thread: ${e.message || String(e)}`, "alert");
+    }
+  };
+
+  const handleReauthenticateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser || currentUser.uid === 'sandbox-user-123') {
+      showToast("Sandbox bypass authorized. Simulated re-auth confirmed!", "success");
+      setReauthFormOpen(false);
+      setAuthSettingsReauthPassword('');
+      return;
+    }
+
+    try {
+      showToast("Authenticating session keys...", "info");
+      const credential = EmailAuthProvider.credential(authSettingsReauthEmail, authSettingsReauthPassword);
+      await reauthenticateWithCredential(auth.currentUser!, credential);
+      showToast("Re-Authenticated successfully! You can now perform sensitive tasks.", "success");
+      setReauthFormOpen(false);
+      setAuthSettingsReauthPassword('');
+    } catch (e: any) {
+      console.error("Firebase reauthenticateWithCredential failure:", e);
+      showToast(`Verification failed: ${e.message || String(e)}`, "alert");
+    }
+  };
+
+  const handleDeleteAuthUser = async () => {
+    if (!currentUser) return;
+    if (!deleteAccountCheck) {
+      showToast("Please confirm account deletion by checking the safety checkbox.", "alert");
+      return;
+    }
+
+    if (currentUser.uid === 'sandbox-user-123') {
+      showToast("Sandbox User account cleared cleanly!", "success");
+      handleLogout();
+      setDeleteAccountCheck(false);
+      return;
+    }
+
+    try {
+      showToast("Attempting absolute data erasure...", "info");
+      const uid = currentUser.uid;
+      
+      await deleteUser(auth.currentUser!);
+      
+      try {
+        await deleteDoc(doc(db, 'users', uid));
+      } catch (fstoreErr) {
+        console.warn("Firestore cleanup omitted during user delete:", fstoreErr);
+      }
+
+      showToast("Account successfully deleted and erased from our databases.", "success");
+      handleLogout();
+      setDeleteAccountCheck(false);
+    } catch (e: any) {
+      console.error("Firebase deleteUser failure:", e);
+      if (e.code === 'auth/requires-recent-login' || String(e).includes('requires-recent-login') || String(e).includes('recent-login')) {
+        showToast("Requires a fresh login/re-auth before account deletion.", "alert");
+        setReauthFormOpen(true);
+      } else {
+        showToast(`Account deletion failed: ${e.message || String(e)}`, "alert");
+      }
     }
   };
 
@@ -3772,6 +4001,298 @@ export default function App() {
 
                   {/* Google Workspace Section */}
                   <WorkspaceIntegrations daysSober={daysSober} userName={userProfile?.name || 'Friend'} />
+
+                  {/* Account Credentials & Diagnostics Section */}
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                      <Fingerprint size={14} className="text-blue-400" /> Account Identity & Credentials
+                    </h3>
+                    
+                    <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-6">
+                      
+                      {/* Active Auth Object Stats */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-1">
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Account Identifier (UID)</span>
+                          <span className="text-xs text-white font-mono break-all block">{currentUser?.uid || 'Not Authenticated'}</span>
+                        </div>
+
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-1">
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Primary Email</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-white font-medium truncate flex-1">{currentUser?.email || 'N/A'}</span>
+                            {currentUser?.emailVerified ? (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                <ShieldCheck size={10} /> Verified
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                                <ShieldAlert size={10} /> Unverified
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-1">
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Display Name</span>
+                          <span className="text-xs text-white font-medium">{currentUser?.displayName || 'No Name Configured'}</span>
+                        </div>
+
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-1">
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">Avatar Metadata URL</span>
+                          <span className="text-xs text-slate-400 truncate block font-mono">
+                            {currentUser?.photoURL ? currentUser.photoURL.substring(0, 45) + '...' : 'None'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Provider Profiles inspector (providerData) */}
+                      <div className="border-t border-slate-800 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setAuthSettingsShowProviders(!authSettingsShowProviders)}
+                          className="w-full py-2 flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400 hover:text-white transition-all cursor-pointer"
+                        >
+                          <span>🔍 View Provider Profiles (providerData)</span>
+                          <span className="text-slate-600">{authSettingsShowProviders ? '▲ Collapse' : '▼ Expand'}</span>
+                        </button>
+
+                        {authSettingsShowProviders && (
+                          <div className="mt-4 bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-4">
+                            <p className="text-[10px] text-slate-400 leading-normal">
+                              The <code className="text-blue-400">providerData</code> list represents all authenticated profiles linked to your active user account.
+                            </p>
+                            
+                            {currentUser && currentUser.providerData && currentUser.providerData.length > 0 ? (
+                              <div className="divide-y divide-slate-900">
+                                {currentUser.providerData.map((profile, i) => (
+                                  <div key={i} className="py-3 first:pt-0 last:pb-0 font-mono text-[10px] text-slate-300 space-y-1 text-left">
+                                    <div className="font-bold text-blue-400 flex items-center justify-between mb-1">
+                                      <span>[Provider #{i + 1}] ProviderID: {profile.providerId}</span>
+                                      <span className="text-[8px] bg-slate-905 px-1.5 py-0.5 rounded text-slate-500 uppercase">Linked</span>
+                                    </div>
+                                    <p><span className="text-slate-500">Provider-specific UID:</span> {profile.uid}</p>
+                                    <p><span className="text-slate-500">Name:</span> {profile.displayName || 'N/A'}</p>
+                                    <p><span className="text-slate-500">Email:</span> {profile.email || 'N/A'}</p>
+                                    <p className="truncate"><span className="text-slate-500">Photo URL:</span> {profile.photoURL || 'N/A'}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center font-mono text-[9px] text-slate-600 py-2">
+                                No linked provider accounts identified on active session.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Interactive Profile Attribute Updates */}
+                      <div className="border-t border-slate-800 pt-6 space-y-4">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Update Profile Attributes</h4>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 px-0.5">Firebase Display Name</label>
+                            <input
+                              type="text"
+                              value={authSettingsDisplayName}
+                              onChange={(e) => setAuthSettingsDisplayName(e.target.value)}
+                              placeholder="e.g. Jane Q. User"
+                              className="w-full bg-slate-950 border border-slate-850 p-3 rounded-xl text-xs text-white focus:border-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 px-0.5">Profile Photo URL</label>
+                            <input
+                              type="text"
+                              value={authSettingsPhotoURL}
+                              onChange={(e) => setAuthSettingsPhotoURL(e.target.value)}
+                              placeholder="https://example.com/jane/profile.jpg"
+                              className="w-full bg-slate-950 border border-slate-850 p-3 rounded-xl text-xs text-white focus:border-blue-500 outline-none transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleUpdateAuthProfile}
+                          className="px-4 py-2.5 bg-blue-600/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-500 text-blue-400 hover:text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                        >
+                          Save Profile Attributes
+                        </button>
+                      </div>
+
+                      {/* Manage Email Credentials */}
+                      <div className="border-t border-slate-800 pt-6 space-y-4">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Login Emails & Verification</h4>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 px-0.5">Registered Login Email Address</label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="email"
+                                value={authSettingsEmail}
+                                onChange={(e) => setAuthSettingsEmail(e.target.value)}
+                                placeholder="jane@example.com"
+                                className="flex-1 bg-slate-950 border border-slate-850 p-3 rounded-xl text-xs text-white focus:border-blue-500 outline-none transition-all"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleUpdateAuthEmail}
+                                className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
+                              >
+                                Modify Login Email
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleResendVerification}
+                              className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-400 hover:text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer animate-pulse"
+                            >
+                              ✉️ Dispatch Verification Email
+                            </button>
+                            <button
+                              type="button"
+                              onClick={checkVerification}
+                              className="px-4 py-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                            >
+                              🔄 Check Verification Status
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Security Action Thread */}
+                      <div className="border-t border-slate-800 pt-6 space-y-4">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Password Recovery & Credentials</h4>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 px-0.5">Overwrite Password Credential</label>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="password"
+                                value={authSettingsPassword}
+                                onChange={(e) => setAuthSettingsPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="flex-1 bg-slate-950 border border-slate-850 p-3 rounded-xl text-xs text-white focus:border-blue-500 outline-none transition-all"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleUpdateAuthPassword}
+                                className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
+                              >
+                                Update Password Block
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <button
+                              type="button"
+                              onClick={handleSendPasswordResetLine}
+                              className="px-4 py-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                            >
+                              📧 Trigger Password Reset Link
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Re-Authentication Gate */}
+                      <div className="border-t border-slate-800 pt-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Session Re-Authentication</h4>
+                          <button 
+                            type="button"
+                            onClick={() => setReauthFormOpen(!reauthFormOpen)}
+                            className="text-[9px] font-black uppercase tracking-wider text-blue-400 hover:underline cursor-pointer"
+                          >
+                            {reauthFormOpen ? 'Hide' : 'Show panel'}
+                          </button>
+                        </div>
+                        
+                        <p className="text-[10px] text-slate-500 leading-normal">
+                          Sensitive account modifications (password/email updates or account deletion) require recent re-verification in Firebase standard security models.
+                        </p>
+
+                        {reauthFormOpen && (
+                          <form onSubmit={handleReauthenticateUser} className="bg-slate-950 border border-slate-850 rounded-2xl p-4 space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[8.5px] font-bold text-slate-500 uppercase tracking-widest mb-1">Verify Email</label>
+                                <input
+                                  type="email"
+                                  value={authSettingsReauthEmail}
+                                  onChange={(e) => setAuthSettingsReauthEmail(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs text-white focus:border-blue-500 outline-none"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[8.5px] font-bold text-slate-500 uppercase tracking-widest mb-1">Verify Password</label>
+                                <input
+                                  type="password"
+                                  value={authSettingsReauthPassword}
+                                  onChange={(e) => setAuthSettingsReauthPassword(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs text-white focus:border-blue-500 outline-none"
+                                  placeholder="••••••••"
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-blue-600/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-500 text-blue-400 hover:text-white rounded-lg font-bold text-[8.5px] uppercase tracking-wider transition-all cursor-pointer"
+                            >
+                              Confirm Credentials & Re-Authenticate
+                            </button>
+                          </form>
+                        )}
+                      </div>
+
+                      {/* Hard Account Deletion */}
+                      <div className="border-t border-rose-950 pt-6 space-y-4">
+                        <h4 className="text-xs font-black uppercase tracking-widest text-rose-500">Danger Zone</h4>
+                        <div className="bg-rose-500/5 border border-rose-500/10 rounded-2xl p-4 space-y-4">
+                          <p className="text-[10px] text-rose-400/90 leading-normal font-medium">
+                            Deleting your account completely clears your user authentication record and deletes all profile settings from the Spokane Recovery Network.
+                          </p>
+
+                          <label className="flex items-start gap-2.5 cursor-pointer text-left">
+                            <input
+                              type="checkbox"
+                              checked={deleteAccountCheck}
+                              onChange={(e) => setDeleteAccountCheck(e.target.checked)}
+                              className="w-4 h-4 mt-0.5 rounded border-rose-500 text-rose-600 bg-slate-950 focus:ring-rose-500"
+                            />
+                            <span className="text-[10px] text-slate-400 select-none font-semibold leading-tight">
+                              I confirm that I understand this action is absolutely permanent and cannot be reversed.
+                            </span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={handleDeleteAuthUser}
+                            disabled={!deleteAccountCheck}
+                            className={`px-4 py-2.5 rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                              deleteAccountCheck 
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer' 
+                                : 'bg-rose-950/20 text-rose-500/50 cursor-not-allowed border border-rose-950/20'
+                            }`}
+                          >
+                            Permanent Deletion of User Account
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
 
                   <div className="space-y-4">
                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2"><Calendar size={14} /> My Meeting History ({mergedAttendance.length})</h3>

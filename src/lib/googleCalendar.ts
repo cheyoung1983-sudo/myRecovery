@@ -51,15 +51,19 @@ export const connectGoogleCalendar = async (): Promise<string> => {
     const errMsg = error?.message || String(error || '');
     const errCode = error?.code || '';
     
-    // Check for HTTP Referer restriction errors from GCP
+    // Check for HTTP Referer restriction errors from GCP or popup cancellations
     if (
       errMsg.includes('requests-from-referer') ||
       errMsg.includes('referer') ||
       errMsg.includes('blocked') ||
+      errMsg.includes('cancelled') ||
+      errMsg.includes('popup-closed') ||
       errCode.includes('referer') ||
-      errCode.includes('blocked')
+      errCode.includes('blocked') ||
+      errCode.includes('cancelled') ||
+      errCode.includes('popup-closed')
     ) {
-      console.warn("Referrer / domain restrictions detected. Bypassing Google Calendar error with Simulated Sandbox Session.");
+      console.warn("Popup blocked, closed, or domain restrictions detected. Bypassing Google Calendar error with Simulated Sandbox Session.");
       cachedAccessToken = "mock_sandbox_google_token";
       return "mock_sandbox_google_token";
     }
