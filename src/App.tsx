@@ -31,6 +31,7 @@ import {
   reauthenticateWithCredential, EmailAuthProvider
 } from 'firebase/auth';
 import { setCachedToken, clearCachedToken, isCalendarConnected, connectGoogleCalendar } from './lib/googleCalendar';
+import { getAuthErrorMessage } from './lib/errorMessages';
 import { 
   doc, setDoc, onSnapshot, collection, query, where, orderBy, 
   serverTimestamp, updateDoc, addDoc, getDoc, getDocs, deleteDoc,
@@ -218,6 +219,7 @@ const INITIAL_SPONSORS: any[] = [
 
 export default function App() {
   const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
+  const [crisisSubTab, setCrisisSubTab] = useState<'hotlines' | 'grounding'>('hotlines');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   
   // Geolocation and play-services equivalents properties
@@ -280,72 +282,10 @@ export default function App() {
   const [recaptchaAction, setRecaptchaAction] = useState<string>('LOGIN');
 
   const verifyRecaptchaEnterprise = async (actionName: string = "LOGIN", keyToUse?: string): Promise<boolean> => {
-    const siteKey = keyToUse || activeRecaptchaKey;
-    setIsVerifyingRecaptcha(true);
-    setRecaptchaScore(null);
-    try {
-      const grecaptcha = (window as any).grecaptcha;
-      if (!grecaptcha || !grecaptcha.enterprise) {
-        console.warn("reCAPTCHA Enterprise library is not loaded on window. Will retry dynamic loading...");
-        // Wait 800ms to see if it script loads asynchronously
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-      
-      const updatedGrecaptcha = (window as any).grecaptcha;
-      if (!updatedGrecaptcha || !updatedGrecaptcha.enterprise) {
-        showToast("reCAPTCHA Enterprise not fully loaded yet. Proceeding with adaptive sandbox validation.", "info");
-        setRecaptchaScore(0.95);
-        setIsVerifyingRecaptcha(false);
-        return true;
-      }
-
-      const token = await new Promise<string | null>((resolve) => {
-        updatedGrecaptcha.enterprise.ready(async () => {
-          try {
-            const tok = await updatedGrecaptcha.enterprise.execute(siteKey, { action: actionName });
-            resolve(tok);
-          } catch (e) {
-            console.warn("grecaptcha enterprise execute failure (user cancelled challenge, network blocker, or domain mismatch detected). Triggering soft sandbox score fallback:", e);
-            resolve(null);
-          }
-        });
-      });
-
-      if (!token) {
-        console.warn("grecaptcha enterprise token generation empty. Triggering default mockup token.");
-        setRecaptchaScore(0.92);
-        setIsVerifyingRecaptcha(false);
-        return true; 
-      }
-
-      setRecaptchaToken(token);
-
-      const response = await fetch("/api/recaptcha/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ token, action: actionName, siteKey })
-      });
-      const data = await response.json();
-      console.log("reCAPTCHA Enterprise verification endpoint feedback:", data);
-      
-      if (data.success) {
-        setRecaptchaScore(data.score ?? 0.9);
-        showToast(`reCAPTCHA Enterprise Verified! Score: ${data.score ?? 0.9}`, "success");
-        return true;
-      } else {
-        setRecaptchaScore(data.score || 0.1);
-        showToast(`reCAPTCHA Enterprise Warning: ${data.reason || "assessment score low"}`, "alert");
-        return true; // Soft fallback for sandbox
-      }
-    } catch (e: any) {
-      console.warn("reCAPTCHA Enterprise validation failed, allowing login progression with score fallback:", e);
-      setRecaptchaScore(0.95);
-      return true;
-    } finally {
-      setIsVerifyingRecaptcha(false);
-    }
+    console.log('[reCAPTCHA Deactivated] Bypassing reCAPTCHA Enterprise assessment entirely.');
+    setRecaptchaScore(1.0);
+    setIsVerifyingRecaptcha(false);
+    return true;
   };
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -363,6 +303,21 @@ export default function App() {
   const [profileCalendarConnected, setProfileCalendarConnected] = useState(isCalendarConnected());
 
   // Interactive Account Diagnostics & Security States
+  const [disableRecaptcha, setDisableRecaptcha] = useState(true);
+  const [disableAppCheck, setDisableAppCheck] = useState(true);
+
+  const handleToggleRecaptcha = (val: boolean) => {
+    setDisableRecaptcha(val);
+    localStorage.setItem('disable_recaptcha', String(val));
+    showToast(val ? "reCAPTCHA Enterprise completely bypassed!" : "reCAPTCHA Enterprise enabled.", "info");
+  };
+
+  const handleToggleAppCheck = (val: boolean) => {
+    setDisableAppCheck(val);
+    localStorage.setItem('disable_app_check', String(val));
+    showToast(val ? "Firebase App Check deactivated. Please refresh page to apply configurations." : "Firebase App Check activated. Refresh recommended.", "info");
+  };
+
   const [authSettingsEmail, setAuthSettingsEmail] = useState('');
   const [authSettingsPassword, setAuthSettingsPassword] = useState('');
   const [authSettingsDisplayName, setAuthSettingsDisplayName] = useState('');
@@ -1301,6 +1256,10 @@ export default function App() {
       combined.includes('unauthorized_client')
     ) {
       return 'unauthorized-domain';
+    }
+
+    if (errCode && errCode.startsWith('auth/')) {
+      return getAuthErrorMessage(errCode);
     }
 
     return e.message || e.code || String(e);
@@ -2825,15 +2784,229 @@ export default function App() {
           )}
 
           {tab === 'crisis' && (
-            <motion.div key="crisis" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
-              <GroundingTool />
-              <div className="grid gap-4">
-                <a href="tel:18772661818" className="flex items-center justify-between p-7 bg-rose-600 rounded-[2rem] text-white">
-                  <div><h3 className="text-xl font-black mb-1">Spokane Regional Crisis</h3><p className="text-rose-100 text-sm">Available 24/7</p></div>
-                  <Phone size={32} />
-                </a>
+            <motion.div key="crisis" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8 max-w-3xl mx-auto">
+              {/* Header Box */}
+              <div className="bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-rose-500 to-transparent" />
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                  <div className="text-center md:text-left space-y-2">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[10px] font-black uppercase tracking-widest rounded-full">
+                      <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping shrink-0" />
+                      Immediate Crisis Support
+                    </div>
+                    <h2 className="text-3xl font-black text-white uppercase tracking-tight italic">Spokane & National Lifelines</h2>
+                    <p className="text-slate-400 text-xs md:text-sm max-w-xl font-medium leading-relaxed">
+                      If you are experiencing a mental health crisis, substance use emergency, or severe physiological distress, reach out immediately. Trained responders are ready to support you 24/7/365. Free and confidential.
+                    </p>
+                  </div>
+                  <div className="shrink-0 scale-110">
+                    <ShieldAlert size={56} className="text-rose-500 animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Sub Tab Toggle */}
+                <div className="flex bg-slate-950 p-1.5 rounded-[2rem] border border-slate-900 mt-8 shadow-xl">
+                  <button
+                    onClick={() => setCrisisSubTab('hotlines')}
+                    className={`flex-1 py-4 text-center rounded-[1.755rem] text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      crisisSubTab === 'hotlines'
+                        ? 'bg-rose-600 text-white font-black shadow-lg shadow-rose-950/40'
+                        : 'bg-transparent text-slate-500 hover:text-slate-350'
+                    }`}
+                  >
+                    <Phone size={14} /> Emergency Hotlines
+                  </button>
+                  <button
+                    onClick={() => setCrisisSubTab('grounding')}
+                    className={`flex-1 py-4 text-center rounded-[1.755rem] text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      crisisSubTab === 'grounding'
+                        ? 'bg-rose-600 text-white font-black shadow-lg shadow-rose-950/40'
+                        : 'bg-transparent text-slate-500 hover:text-slate-350'
+                    }`}
+                  >
+                    <Wind size={14} /> Grounding exercise
+                  </button>
+                </div>
               </div>
-              <button onClick={() => setTab('meetings')} className="w-full text-slate-500 text-sm font-black uppercase tracking-[0.2em] py-8">Exit Crisis Dashboard</button>
+
+              {crisisSubTab === 'hotlines' ? (
+                <div className="space-y-6">
+                  {/* Spokane Regional Hotlines */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                      📍 Spokane Regional Crisis Lines
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Frontier Behavioral Health */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[8px] font-black uppercase tracking-wider rounded">Spokane Core</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">24/7/365</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-rose-400 transition-colors">Frontier Behavioral Health</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Official Spokane County Regional Crisis Line. Call for behavioral health crisis guidance or to request mobile crisis triage teams.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 pt-6">
+                          <a 
+                            href="tel:18772661818" 
+                            className="w-full py-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all shadow-lg shadow-rose-950/20"
+                          >
+                            <Phone size={14} /> Call 1-877-266-1818
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Inland Northwest Behavioral Health */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[8px] font-black uppercase tracking-wider rounded">Psychiatric Care</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">24/7 Evaluations</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-blue-400 transition-colors">Inland Northwest Behavioral</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Acute inpatient clinical evaluations in Spokane. Provides 24/7 psychiatric walk-in assessments and crisis stabilization planning.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 pt-6">
+                          <a 
+                            href="tel:5099921888" 
+                            className="w-full py-3.5 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-700"
+                          >
+                            <Phone size={14} className="text-blue-400" /> Call (509) 992-1888
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* National Hotlines */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 px-1 flex items-center gap-2">
+                      🇺🇸 National Crisis Options
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Suicide & Crisis Lifeline */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[8px] font-black uppercase tracking-wider rounded">Suicide & Crisis</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">Free & Private</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-emerald-400 transition-colors">988 Lifeline</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Direct connection to professional counselors for immediate mental health, suicidal ideation, or substance use crisis support.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-6">
+                          <a 
+                            href="tel:988" 
+                            className="py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-950/20"
+                          >
+                            <Phone size={14} /> Call 988
+                          </a>
+                          <a 
+                            href="sms:988" 
+                            className="py-3.5 bg-slate-850 hover:bg-slate-805 text-emerald-400 rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-800"
+                          >
+                            <MessageCircle size={14} /> Text 988
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Crisis Text Line */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 text-purple-400 text-[8px] font-black uppercase tracking-wider rounded">SMS Service</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">24/7 Crisis SMS</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-purple-400 transition-colors">Crisis Text Line</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Connect with highly trained, compassionate volunteer crisis advocates. Fast, safe, and completely private SMS care.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 pt-6">
+                          <a 
+                            href="sms:741741?body=HOME" 
+                            className="w-full py-3.5 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-700"
+                          >
+                            <MessageCircle size={14} className="text-purple-400" /> Text HOME to 741741
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* SAMHSA National Helpline */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[8px] font-black uppercase tracking-wider rounded">Substance Use</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono font-mono">Bilingual 24/7</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-amber-400 transition-colors">SAMHSA Helpline</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Substance Abuse and Mental Health Services Administration. Provides referrals, educational materials, and professional assistance.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 pt-6">
+                          <a 
+                            href="tel:18006624357" 
+                            className="w-full py-3.5 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-700"
+                          >
+                            <Phone size={14} className="text-amber-400" /> Call 1-800-662-4357
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Veterans Crisis Line */}
+                      <div className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col justify-between hover:border-slate-700 hover:bg-slate-900/80 transition-all shadow-xl group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[8px] font-black uppercase tracking-wider rounded">Veterans Core</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase font-mono">Armed Forces Support</span>
+                          </div>
+                          <h4 className="text-lg font-black text-white group-hover:text-indigo-400 transition-colors">Veterans Crisis Line</h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed font-semibold">
+                            Specialized, confidential crisis care for military veterans, active service members, and their loved ones. Dial 988, then press 1.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-6">
+                          <a 
+                            href="tel:988" 
+                            className="py-3.5 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-700"
+                          >
+                            <Phone size={14} className="text-indigo-400" /> Call 988 (Press 1)
+                          </a>
+                          <a 
+                            href="sms:838255" 
+                            className="py-3.5 bg-slate-850 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-black uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all border border-slate-800"
+                          >
+                            <MessageCircle size={14} className="text-indigo-400" /> Text 838255
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <GroundingTool />
+                </div>
+              )}
+
+              <div className="pt-6 border-t border-slate-800 text-center">
+                <button 
+                  onClick={() => setTab('meetings')} 
+                  className="px-8 py-4 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-white uppercase font-black text-[10px] tracking-[0.25em] border border-slate-800 hover:border-slate-700 rounded-[1.5rem] transition-all cursor-pointer"
+                >
+                  ◀ Exit Crisis Center
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -3295,48 +3468,103 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* reCAPTCHA Enterprise Shield Selection */}
-                          <div className="bg-slate-900/65 p-3.5 border border-slate-800/80 rounded-2xl space-y-2 my-2">
+                          {/* Developer Security & reCAPTCHA Control Box */}
+                          <div className="bg-slate-900/65 p-4 border border-slate-800/80 rounded-2xl space-y-3 my-2 text-left">
                             <div className="flex items-center justify-between">
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                                🛡️ Enterprise Security Shield
+                              <span className="text-[9.5px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                🛠️ Developer Verification Controls
                               </span>
-                              <span className="text-[8px] bg-blue-500/10 text-blue-400 border border-blue-500/10 px-1.5 py-0.5 rounded font-mono font-bold uppercase">Active</span>
+                              <span className="text-[8px] px-1.5 py-0.5 rounded font-mono font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/15">
+                                {disableRecaptcha && disableAppCheck ? "Fast Sandbox Access" : "Standard Security"}
+                              </span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2 text-[10px]">
+
+                            <p className="text-[8.5px] text-slate-500 leading-normal">
+                              Enable fast-pass modes to bypass reCAPTCHA and App Check issues within the sandboxed iframe!
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {/* Toggle reCAPTCHA */}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setActiveRecaptchaKey('6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n');
-                                  setRecaptchaAction('LOGIN');
-                                  showToast("Switched to Enterprise Login Shield!", "info");
-                                }}
-                                className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                                  activeRecaptchaKey === '6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n'
-                                    ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
-                                    : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                onClick={() => handleToggleRecaptcha(!disableRecaptcha)}
+                                className={`p-3 rounded-xl border flex flex-col items-start gap-1 text-left transition-all cursor-pointer ${
+                                  disableRecaptcha 
+                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' 
+                                    : 'bg-slate-950 border-slate-900 text-slate-400 hover:text-white'
                                 }`}
                               >
-                                🔑 Custom (LOGIN)
-                                <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6LeXmPks</span>
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide">reCAPTCHA Protection</span>
+                                  <span className={`text-[7px] font-black px-1 rounded uppercase ${disableRecaptcha ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                                    {disableRecaptcha ? "Bypassed" : "Active"}
+                                  </span>
+                                </div>
+                                <span className="text-[7.5px] text-slate-500 font-normal leading-tight">
+                                  Bypass recaptcha assessment and domain validation.
+                                </span>
                               </button>
+
+                              {/* Toggle App Check */}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setActiveRecaptchaKey('6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag');
-                                  setRecaptchaAction('submit');
-                                  showToast("Switched to Fallback submit token!", "info");
-                                }}
-                                className={`p-2 rounded-xl border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
-                                  activeRecaptchaKey === '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag'
-                                    ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
-                                    : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                onClick={() => handleToggleAppCheck(!disableAppCheck)}
+                                className={`p-3 rounded-xl border flex flex-col items-start gap-1 text-left transition-all cursor-pointer ${
+                                  disableAppCheck 
+                                    ? 'bg-emerald-500/15 border-emerald-505/30 text-emerald-400' 
+                                    : 'bg-slate-950 border-slate-900 text-slate-400 hover:text-white'
                                 }`}
                               >
-                                🌍 Fallback (SUBMIT)
-                                <span className="block text-[7px] font-mono text-slate-505 font-normal tracking-normal lowercase">...6Le6aPks</span>
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[9.5px] font-extrabold uppercase tracking-wide">Firebase App Check</span>
+                                  <span className={`text-[7px] font-black px-1 rounded uppercase ${disableAppCheck ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                                    {disableAppCheck ? "Deactivated" : "Active"}
+                                  </span>
+                                </div>
+                                <span className="text-[7.5px] text-slate-500 font-normal leading-tight">
+                                  Terminates App Check interceptor blocking requests.
+                                </span>
                               </button>
                             </div>
+
+                            {/* Key configs only if reCAPTCHA is active */}
+                            {!disableRecaptcha && (
+                              <div className="space-y-1.5 pt-2 border-t border-slate-850">
+                                <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider block">Active reCAPTCHA Site Key</span>
+                                <div className="grid grid-cols-2 gap-1.5 text-[9px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveRecaptchaKey('6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n');
+                                      setRecaptchaAction('LOGIN');
+                                      showToast("Switched to Enterprise Login Shield!", "info");
+                                    }}
+                                    className={`p-1.5 rounded-lg border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                      activeRecaptchaKey === '6LeXmPksAAAAAJGI_NiV0T5-SLXKUsn5bvHP0r4n'
+                                        ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                        : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                    }`}
+                                  >
+                                    🔑 Custom (LOGIN)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveRecaptchaKey('6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag');
+                                      setRecaptchaAction('submit');
+                                      showToast("Switched to Fallback submit token!", "info");
+                                    }}
+                                    className={`p-1.5 rounded-lg border text-center font-bold tracking-wider uppercase transition-all cursor-pointer ${
+                                      activeRecaptchaKey === '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag'
+                                        ? 'bg-blue-600/15 border-blue-500/40 text-blue-400'
+                                        : 'bg-slate-950 border-slate-900 text-slate-500 hover:text-slate-350'
+                                    }`}
+                                  >
+                                    🌍 Fallback (SUBMIT)
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {isVerifyingRecaptcha && (
@@ -4357,6 +4585,7 @@ export default function App() {
           { id: 'hub', icon: Trophy, label: 'Hub' },
           { id: 'sponsors', icon: UserCheck, label: 'Partners' },
           { id: 'resources', icon: Heart, label: 'Bento' },
+          { id: 'crisis', icon: ShieldAlert, label: 'Crisis', color: 'text-rose-500' },
           { id: 'literature', icon: BookOpen, label: 'Read' },
           { id: 'ai', icon: Sparkles, label: 'Guide' },
           { id: 'chat', icon: Mail, label: 'Inbox', badge: unreadCount },

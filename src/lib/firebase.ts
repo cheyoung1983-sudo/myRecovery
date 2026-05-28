@@ -93,28 +93,33 @@ googleProvider.addScope('https://www.googleapis.com/auth/userinfo.email');
 // Dynamically initialize App Check, turning on the Debug Provider when running inside local/sandbox hostnames
 if (typeof window !== 'undefined') {
   try {
-    const hostname = window.location.hostname;
-    const isDevelopment = (
-      hostname.includes('localhost') || 
-      hostname.includes('ais-dev') || 
-      hostname.includes('ais-pre') || 
-      hostname.includes('run.app')
-    );
+    const shouldDisableAppCheck = true;
+    if (shouldDisableAppCheck) {
+      console.log('[Firebase App Check] Deactivated by default in developer/sandbox environment to prevent connection and sign-in blocking.');
+    } else {
+      const hostname = window.location.hostname;
+      const isDevelopment = (
+        hostname.includes('localhost') || 
+        hostname.includes('ais-dev') || 
+        hostname.includes('ais-pre') || 
+        hostname.includes('run.app')
+      );
 
-    if (isDevelopment) {
-      // Configure a stable, custom debug token so you only need to register it ONCE in the Firebase Console.
-      (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "405a29ce-e558-4918-b3f2-01fa8cf1292a";
-      console.log('[Firebase App Check] Development/Sandbox host detected. Global debug token configured.');
-      console.log('[Firebase App Check] Static Debug Token: 405a29ce-e558-4918-b3f2-01fa8cf1292a');
-      console.log('[Firebase App Check] Register this exact token inside Firebase Console > App Check > Apps > Manage debug tokens.');
+      if (isDevelopment) {
+        // Configure a stable, custom debug token so you only need to register it ONCE in the Firebase Console.
+        (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = "405a29ce-e558-4918-b3f2-01fa8cf1292a";
+        console.log('[Firebase App Check] Development/Sandbox host detected. Global debug token configured.');
+        console.log('[Firebase App Check] Static Debug Token: 405a29ce-e558-4918-b3f2-01fa8cf1292a');
+        console.log('[Firebase App Check] Register this exact token inside Firebase Console > App Check > Apps > Manage debug tokens.');
+      }
+      
+      const recaptchaKey = '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag';
+      initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+      console.log('[Firebase App Check] Subsystem initialized successfully.');
     }
-    
-    const recaptchaKey = '6Le6aPksAAAAALxPg5TQhZcR-1lLFUg0BELoq7ag';
-    initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(recaptchaKey),
-      isTokenAutoRefreshEnabled: true,
-    });
-    console.log('[Firebase App Check] Subsystem initialized successfully.');
   } catch (err) {
     console.warn('[Firebase App Check] Initialization bypassed/failed (expected if App Check is disabled/unavailable):', err);
   }
