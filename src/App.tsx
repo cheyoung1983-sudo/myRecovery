@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Phone, ShieldAlert, MapPin, Bus, Heart, 
   Wind, MessageCircle, ChevronRight, X, BadgeCheck,
@@ -290,6 +290,9 @@ export default function App() {
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isLoginTransitioning, setIsLoginTransitioning] = useState(false);
+  const loginInProgressRef = useRef(false);
+  const [transitionUser, setTransitionUser] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -627,6 +630,10 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        if (loginInProgressRef.current) {
+          setIsLoginTransitioning(true);
+          setTransitionUser(user.displayName || user.email || 'Peer');
+        }
         setCurrentUser(user);
         setIsAuthLoading(false);
         setIsSuperAdmin(user.email === SUPER_ADMIN_EMAIL);
@@ -640,6 +647,14 @@ export default function App() {
               setUserNeeds(data.recoveryNeeds || []);
               if (data.sobrietyDate) setSobrietyDate(data.sobrietyDate);
               if (data.neighborhood) setSelectedNeighborhood(data.neighborhood);
+
+              if (loginInProgressRef.current) {
+                loginInProgressRef.current = false;
+                setTimeout(() => {
+                  setIsLoginTransitioning(false);
+                  showToast(`Welcome back, ${data.name || user.displayName || 'Peer'}! Your recovery space is ready.`, "success");
+                }, 1000);
+              }
 
               // Automatically check and sync any local guest moodLogs to cloud database for this user
               try {
@@ -758,10 +773,22 @@ export default function App() {
                 console.warn("Could not sync local mood logs on user creation:", err);
               }
 
-              showToast("Your local profile progress has been backed up and saved to the database!", "success");
+              if (loginInProgressRef.current) {
+                loginInProgressRef.current = false;
+                setTimeout(() => {
+                  setIsLoginTransitioning(false);
+                  showToast(`Setting up workspace... Welcome to Spokane Recovery Network, ${profile.name}!`, "success");
+                }, 1000);
+              } else {
+                showToast("Your local profile progress has been backed up and saved to the database!", "success");
+              }
             }
           }, (err) => {
             console.warn("User profile snapshot error (using offline memory):", err);
+            if (loginInProgressRef.current) {
+              loginInProgressRef.current = false;
+              setIsLoginTransitioning(false);
+            }
           });
           return () => unsubProfile();
         } catch (e) {
@@ -799,6 +826,9 @@ export default function App() {
   const handleCompleteEmailLinkSignIn = async (emailToUse: string) => {
     setIsAuthLoading(true);
     setAuthError('');
+    loginInProgressRef.current = true;
+    setIsLoginTransitioning(true);
+    setTransitionUser(emailToUse);
     try {
       await signInWithEmailLink(auth, emailToUse, window.location.href);
       window.localStorage.removeItem('emailForSignIn');
@@ -1130,73 +1160,85 @@ export default function App() {
   };
 
   const handleSandboxLoginWithEmail = (customEmail: string) => {
-    const simulatedUser = {
-      uid: 'sandbox-user-' + customEmail.replace(/[^a-zA-Z0-9]/g, '-'),
-      email: customEmail,
-      displayName: customEmail.split('@')[0],
-      emailVerified: true,
-      photoURL: '',
-      isAnonymous: false,
-    } as any;
+    setIsLoginTransitioning(true);
+    setTransitionUser(customEmail);
     
-    setCurrentUser(simulatedUser);
+    setTimeout(() => {
+      const simulatedUser = {
+        uid: 'sandbox-user-' + customEmail.replace(/[^a-zA-Z0-9]/g, '-'),
+        email: customEmail,
+        displayName: customEmail.split('@')[0],
+        emailVerified: true,
+        photoURL: '',
+        isAnonymous: false,
+      } as any;
+      
+      setCurrentUser(simulatedUser);
 
-    const savedProfile = localStorage.getItem('sober_spokane_userProfile_' + customEmail);
-    const defaultProfile: UserProfile = {
-      email: customEmail,
-      name: customEmail.split('@')[0] + ' (Sandbox)',
-      photoURL: '',
-      sobrietyDate: '2023-01-15',
-      recoveryNeeds: ['Meetings', 'Peer Support'],
-      neighborhood: 'Downtown Spokane',
-      role: 'user',
-      points: 120,
-      badges: ['First Step']
-    };
-    const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
-    setUserProfile(finalProfile);
-    setUserNeeds(finalProfile.recoveryNeeds || []);
-    setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
-    setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
+      const savedProfile = localStorage.getItem('sober_spokane_userProfile_' + customEmail);
+      const defaultProfile: UserProfile = {
+        email: customEmail,
+        name: customEmail.split('@')[0] + ' (Sandbox)',
+        photoURL: '',
+        sobrietyDate: '2023-01-15',
+        recoveryNeeds: ['Meetings', 'Peer Support'],
+        neighborhood: 'Downtown Spokane',
+        role: 'user',
+        points: 120,
+        badges: ['First Step']
+      };
+      const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
+      setUserProfile(finalProfile);
+      setUserNeeds(finalProfile.recoveryNeeds || []);
+      setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
+      setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
 
-    setIsSuperAdmin(customEmail === SUPER_ADMIN_EMAIL);
-    setIsAuthLoading(false);
-    showToast(`Welcome! Logged in with Simulated Profile for ${customEmail}`, "success");
+      setIsSuperAdmin(customEmail === SUPER_ADMIN_EMAIL);
+      setIsAuthLoading(false);
+      setIsLoginTransitioning(false);
+      showToast(`Welcome back! Logged in with Simulated Profile for ${customEmail}`, "success");
+    }, 1200);
   };
 
   const handleSandboxLogin = () => {
-    const simulatedUser = {
-      uid: 'sandbox-user-123',
-      email: 'sandbox@soberspokane.org',
-      displayName: 'Spokane Peer',
-      emailVerified: true,
-      photoURL: '',
-      isAnonymous: false,
-    } as any;
+    setIsLoginTransitioning(true);
+    setTransitionUser('Spokane Peer');
     
-    setCurrentUser(simulatedUser);
+    setTimeout(() => {
+      const simulatedUser = {
+        uid: 'sandbox-user-123',
+        email: 'sandbox@soberspokane.org',
+        displayName: 'Spokane Peer',
+        emailVerified: true,
+        photoURL: '',
+        isAnonymous: false,
+      } as any;
+      
+      setCurrentUser(simulatedUser);
 
-    const savedProfile = localStorage.getItem('sober_spokane_userProfile');
-    const defaultProfile: UserProfile = {
-      email: 'sandbox@soberspokane.org',
-      name: 'Spokane Peer (Sandbox)',
-      photoURL: '',
-      sobrietyDate: '2023-01-15',
-      recoveryNeeds: ['Meetings', 'Peer Support'],
-      neighborhood: 'Downtown Spokane',
-      role: 'user',
-      points: 120,
-      badges: ['First Step']
-    };
-    const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
-    setUserProfile(finalProfile);
-    setUserNeeds(finalProfile.recoveryNeeds || []);
-    setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
-    setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
+      const savedProfile = localStorage.getItem('sober_spokane_userProfile');
+      const defaultProfile: UserProfile = {
+        email: 'sandbox@soberspokane.org',
+        name: 'Spokane Peer (Sandbox)',
+        photoURL: '',
+        sobrietyDate: '2023-01-15',
+        recoveryNeeds: ['Meetings', 'Peer Support'],
+        neighborhood: 'Downtown Spokane',
+        role: 'user',
+        points: 120,
+        badges: ['First Step']
+      };
+      const finalProfile = savedProfile ? JSON.parse(savedProfile) : defaultProfile;
+      setUserProfile(finalProfile);
+      setUserNeeds(finalProfile.recoveryNeeds || []);
+      setSobrietyDate(finalProfile.sobrietyDate || '2023-01-15');
+      setSelectedNeighborhood(finalProfile.neighborhood || 'Downtown Spokane');
 
-    setIsSuperAdmin(false);
-    setIsAuthLoading(false);
-    showToast("Welcome! Logging in with Simulated Sandbox Profile.", "success");
+      setIsSuperAdmin(false);
+      setIsAuthLoading(false);
+      setIsLoginTransitioning(false);
+      showToast("Welcome back! Logged in with Simulated Sandbox Profile.", "success");
+    }, 1200);
   };
 
   const parseAuthError = (e: any): string => {
@@ -1268,6 +1310,9 @@ export default function App() {
   const handleLogin = async () => {
     setAuthError('');
     setRawAuthError('');
+    loginInProgressRef.current = true;
+    setIsLoginTransitioning(true);
+    setTransitionUser('Google User');
     try {
       await applyPersistenceMode(persistenceMode);
       const result = await signInWithPopup(auth, googleProvider);
@@ -1276,6 +1321,8 @@ export default function App() {
         setCachedToken(credential.accessToken);
       }
     } catch (e: any) {
+      loginInProgressRef.current = false;
+      setIsLoginTransitioning(false);
       const parsed = parseAuthError(e);
       setRawAuthError(e?.message || String(e));
       if (parsed === 'gcp-referer-blocked' || parsed === 'unauthorized-domain') {
@@ -1304,10 +1351,16 @@ export default function App() {
       return;
     }
 
+    loginInProgressRef.current = true;
+    setIsLoginTransitioning(true);
+    setTransitionUser(email);
+
     try {
       await applyPersistenceMode(persistenceMode);
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e: any) {
+      loginInProgressRef.current = false;
+      setIsLoginTransitioning(false);
       const parsed = parseAuthError(e);
       setRawAuthError(e?.message || String(e));
       if (parsed === 'gcp-referer-blocked' || parsed === 'unauthorized-domain') {
@@ -1336,6 +1389,10 @@ export default function App() {
       return;
     }
 
+    loginInProgressRef.current = true;
+    setIsLoginTransitioning(true);
+    setTransitionUser(email);
+
     try {
       await applyPersistenceMode(persistenceMode);
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
@@ -1347,6 +1404,8 @@ export default function App() {
       await sendEmailVerification(userCred.user, actionCodeSettings);
       setResetSent(true);
     } catch (e: any) {
+      loginInProgressRef.current = false;
+      setIsLoginTransitioning(false);
       const parsed = parseAuthError(e);
       setRawAuthError(e?.message || String(e));
       if (parsed === 'gcp-referer-blocked' || parsed === 'unauthorized-domain') {
@@ -4754,6 +4813,79 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+
+        {/* Premium State Transition & Overlay Guard */}
+        {isLoginTransitioning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 bg-[#070b15]/90 backdrop-blur-xl z-[9999] flex flex-col items-center justify-center p-6 text-center select-none"
+          >
+            <div className="relative flex flex-col items-center max-w-sm w-full p-8 md:p-12 space-y-8">
+              {/* Pulsing Backlight effect */}
+              <div className="absolute inset-0 bg-blue-500/10 blur-[80px] rounded-full -z-10 animate-pulse" />
+              
+              {/* Spinner & Ring Animation */}
+              <div className="relative w-24 h-24 flex items-center justify-center">
+                {/* Outer Ring */}
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                  className="absolute inset-0 rounded-full border-4 border-slate-850 border-t-blue-500 border-r-blue-400"
+                />
+                {/* Inner Ring - counter rotating */}
+                <motion.div
+                  animate={{ rotate: -360 }}
+                  transition={{ repeat: Infinity, duration: 2.5, ease: "linear" }}
+                  className="absolute inset-2 rounded-full border border-slate-800/50 border-b-cyan-400/80 border-l-cyan-400/40"
+                />
+                {/* Center Symbol */}
+                <motion.div 
+                  initial={{ scale: 0.8 }}
+                  animate={{ scale: [0.8, 1.1, 0.8] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  className="z-10 text-3xl select-none filter drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                >
+                  🏔️
+                </motion.div>
+              </div>
+
+              <div className="space-y-3">
+                <motion.h3 
+                  initial={{ y: 15, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.15, duration: 0.4 }}
+                  className="text-2xl font-black italic tracking-tight text-white uppercase"
+                >
+                  Confirming Entry
+                </motion.h3>
+                <motion.p
+                  initial={{ y: 15, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.25, duration: 0.4 }}
+                  className="text-[10px] font-bold tracking-wider text-slate-400 uppercase leading-relaxed"
+                >
+                  {transitionUser ? `Preparing Space for ${transitionUser}` : 'Preparing Spokane Recovery Network...'}
+                </motion.p>
+              </div>
+
+              {/* Secure Connection Details */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4 }}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900/80 border border-slate-800/80 rounded-2xl"
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest font-mono">
+                  Secure Cloud Sync Verified
+                </span>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
