@@ -1284,13 +1284,13 @@ async function startServer() {
         throw new Error("GEMINI_API_KEY environment variable is not defined");
       }
       
-      const { prompt, history = [], isCrisis = false } = req.body;
+      const { prompt, history = [], isCrisis = false, isHighThinkingMode = false } = req.body;
       
       const resourcesContext = SPOKANE_RESOURCES.map(r => 
-        `- ${r.name} (${r.category}): ${r.description}. Phone: ${r.phone}`
+         `- ${r.name} (${r.category}): ${r.description}. Phone: ${r.phone}`
       ).join("\n");
 
-      const systemInstruction = `
+      let systemInstruction = `
         You are "Sober Spokane Assistant", a compassionate peer-support AI for recovery.
         ${isCrisis ? "The user has indicated they are in a CRISIS or high-risk state. Prioritize immediate safety, grounding techniques, and 988/emergency contacts." : "Your tone is non-judgmental, encouraging, and informative."}
         
@@ -1305,8 +1305,42 @@ async function startServer() {
         5. Concise markdown responses.
       `;
 
+      if (isHighThinkingMode) {
+        systemInstruction = `
+          You are operating in HIGH THINKING MODE. You must thoroughly analyze the user's input step-by-step.
+          
+          CRITICAL INSTRUCTION:
+          You MUST enclose your internal step-by-step reasoning process within <thought_process>...</thought_process> tags at the very beginning of your response.
+          1. Break down the user's emotional state, challenges or triggers.
+          2. Reflect on trauma-informed care and SMART recovery principles.
+          3. Evaluate local resource matches from the list.
+          
+          Once your reasoning is complete, close the tags with </thought_process> and provide your compassionate, polished final peer-support response.
+          
+          ${isCrisis ? "The user is in crisis. Focus internal thought on stabilization, safety, and critical grounding." : ""}
+          
+          Available Local Resources:
+          ${resourcesContext}
+          
+          Guidelines:
+          1. Enclose reasoning in <thought_process>...</thought_process> ALWAYS.
+          2. Speak with Spokane-specific references.
+          3. Peer supportive tone.
+        `;
+      }
+
+      const activeModel = isHighThinkingMode ? "gemini-1.5-pro" : "gemini-3.5-flash";
+      const config: any = {
+        systemInstruction,
+        temperature: isHighThinkingMode ? 0.2 : 0.7,
+      };
+
+      if (isHighThinkingMode) {
+        config.maxOutputTokens = 8192;
+      }
+
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: activeModel,
         contents: [
           ...history.map((m: any) => ({
             role: m.role === 'user' ? 'user' : 'model',
@@ -1314,16 +1348,16 @@ async function startServer() {
           })),
           { role: 'user', parts: [{ text: prompt }] }
         ],
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        },
+        config,
       });
 
       res.json({ text: response.text });
     } catch (error: any) {
       console.warn("[Gemini API Warning] Real Gemini API call failed. Reverting to Spokane Peer Backup...", error.message || error);
-      const text = generateLocalPeerResponse(req.body.prompt, req.body.isCrisis);
+      let text = generateLocalPeerResponse(req.body.prompt, req.body.isCrisis);
+      if (req.body.isHighThinkingMode) {
+        text = `<thought_process>\n[Trauma-Informed Assessment: Local Backup Sandbox Mode]\n- Analyzed User Request: "${req.body.prompt}"\n- Current State Needs: Local peer routing & Spokane-specific support maps\n- Selected Intervention: Localized peer simulator matching recovery criteria\n</thought_process>\n` + text;
+      }
       res.json({ text });
     }
   });
