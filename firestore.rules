@@ -165,6 +165,27 @@ service cloud.firestore {
              data.timestamp == request.time;
     }
 
+    function isValidABCLog(data) {
+      return data.keys().hasAll(['userId', 'activatingEvent', 'beliefs', 'consequences', 'disputes', 'effectiveBeliefs', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.activatingEvent is string && data.activatingEvent.size() <= 10000 &&
+             data.beliefs is string && data.beliefs.size() <= 10000 &&
+             data.consequences is string && data.consequences.size() <= 10000 &&
+             data.disputes is string && data.disputes.size() <= 10000 &&
+             data.effectiveBeliefs is string && data.effectiveBeliefs.size() <= 10000 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidCBALog(data) {
+      return data.keys().hasAll(['userId', 'prosUsing', 'consUsing', 'prosSobriety', 'consSobriety', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.prosUsing is string && data.prosUsing.size() <= 10000 &&
+             data.consUsing is string && data.consUsing.size() <= 10000 &&
+             data.prosSobriety is string && data.prosSobriety.size() <= 10000 &&
+             data.consSobriety is string && data.consSobriety.size() <= 10000 &&
+             data.createdAt == request.time;
+    }
+
     // --- Collections ---
 
     match /test/connection {
@@ -208,6 +229,18 @@ service cloud.firestore {
       match /moodLogs/{logId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidMoodLog(incoming());
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /abcLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidABCLog(incoming());
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /cbaLogs/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidCBALog(incoming());
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

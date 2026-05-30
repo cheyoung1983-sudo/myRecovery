@@ -12,7 +12,7 @@ import {
   ArrowLeft, Send, Search, Menu, Bell, BellOff, Settings2,
   LogOut, LogIn, Mail, Sparkles, Calendar, TrendingUp, Trophy,
   Smile, Frown, Meh, AlertCircle, Check, BookOpen, RefreshCw,
-  Compass, Bookmark, Database, Activity, Wifi, Users
+  Compass, Bookmark, Database, Activity, Wifi, Users, Brain
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { APIProvider, Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
@@ -85,6 +85,7 @@ import { MeetingMap } from './components/MeetingMap';
 import { ChatView } from './components/ChatView';
 import { GoogleChatView } from './components/GoogleChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import SmartRecoveryTools from './components/SmartRecoveryTools';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -218,7 +219,7 @@ const INITIAL_SPONSORS: any[] = [
 // --- MAIN APPLICATION ---
 
 export default function App() {
-  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature'>('meetings');
+  const [tab, setTab] = useState<'meetings' | 'sponsors' | 'crisis' | 'profile' | 'admin' | 'apply' | 'chat' | 'resources' | 'hub' | 'ai' | 'literature' | 'smart'>('meetings');
   const [crisisSubTab, setCrisisSubTab] = useState<'hotlines' | 'grounding'>('hotlines');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   
@@ -3431,6 +3432,12 @@ export default function App() {
             </motion.div>
           )}
 
+          {tab === 'smart' && (
+            <ErrorBoundary>
+              <SmartRecoveryTools currentUser={currentUser} showToast={showToast} />
+            </ErrorBoundary>
+          )}
+
           {tab === 'ai' && (
             <ErrorBoundary>
               <AISupportView currentUser={currentUser} moodLogs={mergedMoodLogs} streak={streak} />
@@ -5006,6 +5013,7 @@ export default function App() {
           { id: 'hub', icon: Trophy, label: 'Hub' },
           { id: 'sponsors', icon: UserCheck, label: 'Partners' },
           { id: 'resources', icon: Heart, label: 'Bento' },
+          { id: 'smart', icon: Brain, label: 'SMART', color: 'text-indigo-400' },
           { id: 'crisis', icon: ShieldAlert, label: 'Crisis', color: 'text-rose-500' },
           { id: 'literature', icon: BookOpen, label: 'Read' },
           { id: 'ai', icon: Sparkles, label: 'Guide' },

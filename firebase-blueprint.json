@@ -212,6 +212,35 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "mood", "timestamp"]
+    },
+    "SmartABCLog": {
+      "title": "SMART ABC Problem Solving Log",
+      "description": "ABC worksheet database entries",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "activatingEvent": { "type": "string" },
+        "beliefs": { "type": "string" },
+        "consequences": { "type": "string" },
+        "disputes": { "type": "string" },
+        "effectiveBeliefs": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "activatingEvent", "beliefs", "consequences", "disputes", "effectiveBeliefs", "createdAt"]
+    },
+    "SmartCBALog": {
+      "title": "SMART Cost-Benefit Analysis Log",
+      "description": "CBA worksheet database entries",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "prosUsing": { "type": "string" },
+        "consUsing": { "type": "string" },
+        "prosSobriety": { "type": "string" },
+        "consSobriety": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "prosUsing", "consUsing", "prosSobriety", "consSobriety", "createdAt"]
     }
   },
   "firestore": {
@@ -274,6 +303,14 @@
     "/spokaneResources/{resourceId}": {
       "schema": "SpokaneResource",
       "description": "Directory of local Spokane resources"
+    },
+    "/users/{userId}/abcLogs/{logId}": {
+      "schema": "SmartABCLog",
+      "description": "SMART Recovery ABC problem solving logs"
+    },
+    "/users/{userId}/cbaLogs/{logId}": {
+      "schema": "SmartCBALog",
+      "description": "SMART Recovery Cost-Benefit Analysis logs"
     }
   }
 }
