@@ -22,6 +22,7 @@ import { UserProfile } from '../types';
 import { SPOKANE_NEIGHBORHOODS, RECOVERY_NEEDS } from '../constants';
 import { db, OperationType, handleFirestoreError } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { CommunityGuidelines } from './CommunityGuidelines';
 
 interface ProfileOnboardingProps {
   user: { uid: string };
@@ -91,7 +92,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
     }
   };
 
-  const nextStep = () => setStep(prev => Math.min(prev + 1, 6));
+  const nextStep = () => setStep(prev => Math.min(prev + 1, 7));
   const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
 
   // Step Validator
@@ -103,6 +104,28 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
     if (step === 5) return !!primaryFellowship && !!currentStep && !!sponsorshipStyle;
     return true;
   };
+
+  if (step === 7) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-xl overflow-y-auto">
+        <motion.div 
+          initial={{ scale: 0.95, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          className="w-full max-w-xl my-8 relative"
+        >
+          <CommunityGuidelines onAccept={handleFinish} />
+          <button
+            type="button"
+            onClick={prevStep}
+            className="mt-4 w-full py-4 bg-slate-900/80 hover:bg-slate-800 text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest transition-all cursor-pointer border border-slate-800 backdrop-blur-sm shadow-xl flex items-center justify-center gap-1.5"
+            id="back-to-profile-from-guidelines-btn"
+          >
+            ← Review & Amend Profile Details
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-xl overflow-y-auto">
@@ -116,7 +139,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
           <motion.div 
             className="h-full bg-gradient-to-r from-blue-500 to-emerald-500" 
             initial={{ width: '0%' }}
-            animate={{ width: `${(step / 6) * 100}%` }}
+            animate={{ width: `${(step / 7) * 100}%` }}
             transition={{ duration: 0.3 }}
           />
         </div>
@@ -128,7 +151,7 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
               Recovery Profile Onboarding
             </span>
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-900 border border-slate-800 px-3 py-1 rounded-full">
-              Step {step} of 6
+              Step {step} of 7
             </span>
           </div>
 
@@ -577,10 +600,11 @@ export const ProfileOnboarding: React.FC<ProfileOnboardingProps> = ({ user, prof
                   </button>
                   <button
                     disabled={isSubmitting}
-                    onClick={handleFinish}
-                    className="flex-[2] py-4 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 cursor-pointer"
+                    onClick={nextStep}
+                    className="flex-[2] py-4 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 cursor-pointer"
+                    id="finish-onboarding-to-guidelines-btn"
                   >
-                    {isSubmitting ? 'Finalizing Profile...' : 'Activate Hub'}
+                    Review Peer Guidelines
                   </button>
                 </div>
               </motion.div>

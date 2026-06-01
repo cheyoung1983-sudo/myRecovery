@@ -1,0 +1,9 @@
+{
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-7510685978539466~3542343117",
+    "ios_app_id": "ca-app-pub-7510685978539466~8605860319"
+  },
+  "react-native": {
+    "admob_android_app_id": "ca-app-pub-7510685978539466~3542343117"
+  }
+}

@@ -73,6 +73,7 @@ import { SpokaneResources } from './components/SpokaneResources';
 import { LiteratureSearch } from './components/LiteratureSearch';
 import { RecoveryHub } from './components/RecoveryHub';
 import { GroundingTool } from './components/GroundingTool';
+import { NervousSystemRecalibration } from './components/NervousSystemRecalibration';
 import { MeetingCard } from './components/MeetingCard';
 import { SponsorCard } from './components/SponsorCard';
 import { ResourceCard } from './components/ResourceCard';
@@ -86,6 +87,7 @@ import { ChatView } from './components/ChatView';
 import { GoogleChatView } from './components/GoogleChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import SmartRecoveryTools from './components/SmartRecoveryTools';
+import { MyRecoveryLogo } from './components/MyRecoveryLogo';
 
 const GOOGLE_MAPS_API_KEY =
   import.meta.env.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
@@ -2723,14 +2725,7 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-[#0f172a]/80 backdrop-blur-xl border-b border-slate-800/50 px-6 py-5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="relative">
-                <div className="p-2 bg-gradient-to-br from-blue-600 to-emerald-600 rounded-xl shadow-lg shadow-blue-900/40 relative z-10">
-                   <Heart size={24} className="text-white fill-white/20" />
-                </div>
-                <div className="absolute -top-1 -right-1 p-1 bg-emerald-500 rounded-lg shadow-lg z-20">
-                   <Sparkles size={8} className="text-white" />
-                </div>
-             </div>
+             <MyRecoveryLogo size={44} />
              <div>
                 <div className="flex items-center gap-2 leading-none">
                    <div className="flex items-baseline gap-0.5">
@@ -3417,7 +3412,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <GroundingTool />
+                  <NervousSystemRecalibration currentUser={currentUser} showToast={showToast} onClose={() => setCrisisSubTab('hotlines')} />
                 </div>
               )}
 
@@ -3579,8 +3574,9 @@ export default function App() {
                     </div>
                   ) : (
                     <>
-                      <div className="text-center space-y-2">
-                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tight">
+                      <div className="text-center space-y-4 flex flex-col items-center">
+                        <MyRecoveryLogo size={64} className="mb-2" />
+                        <h2 className="text-3xl font-black text-white italic uppercase tracking-tight leading-none">
                           {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Join the Network' : authMode === 'forgot' ? 'Reset Password' : 'Passwordless Access'}
                         </h2>
                       </div>
@@ -5043,10 +5039,10 @@ export default function App() {
           />
         )}
         {isGroundingActive && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-6">
-            <div className="w-full max-w-sm relative">
-              <button onClick={() => setIsGroundingActive(false)} className="absolute -top-12 right-0 p-2 text-slate-400 hover:text-white"><X size={24} /></button>
-              <GroundingTool />
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
+            <div className="w-full max-w-2xl relative my-auto">
+              <button onClick={() => setIsGroundingActive(false)} className="absolute -top-12 right-0 p-2 text-slate-400 hover:text-white bg-slate-900/60 rounded-full border border-slate-800"><X size={20} /></button>
+              <NervousSystemRecalibration currentUser={currentUser} showToast={showToast} onClose={() => setIsGroundingActive(false)} />
             </div>
           </motion.div>
         )}
