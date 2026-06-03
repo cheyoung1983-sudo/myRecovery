@@ -201,24 +201,40 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
 
       {showShareModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-[2rem] max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+          <div className="bg-slate-900 border border-slate-800 rounded-[2rem] max-w-xl w-full p-6 space-y-4 shadow-2xl relative">
             <h4 className="text-sm font-black uppercase tracking-wider text-white">Share our Latest Innovation</h4>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
-              Help spreads the word! Share our newly deployed **High Thinking Mode** update. Our custom models systematically reflect using clinical-grade guidelines before offering real-time Spokane support.
+              Help spreads the word! Share our newly deployed **myRecovery Spokane** update. Our custom models and high-fidelity integrations offer next-level trauma-informed and resilient peer recovery services.
             </p>
 
             <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-2">
-              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-black block">Prepared Social Copy</label>
+              <label className="text-[10px] text-slate-500 uppercase tracking-widest font-black block">Prepared Facebook/Social Copy</label>
               <textarea
                 readOnly
-                className="w-full bg-transparent text-xs text-slate-300 border-none outline-none resize-none h-24 leading-relaxed font-mono font-bold"
-                value={`📈 Huge milestone for Spokane peer support! myRecovery Spokane has launched "High Thinking Mode" with persistent Firestore wellness maps & deep reasoning diagnostics to elevate trauma-informed care. Check it out at ${window.location.origin}`}
+                className="w-full bg-transparent text-[11px] text-slate-300 border-none outline-none resize-none h-48 leading-relaxed font-mono font-bold"
+                value={`🚀 BIG UPDATE: Today's High-Fidelity Features in myRecovery Spokane! 🚀
+
+We've deployed a massive update combining state-of-the-art trauma-informed AI support with secure, admin-level cloud identity & telemetry:
+
+🧠 "High Thinking Mode" Active: Trauma-informed AI systematically reflects using clinical-grade recovery guidelines before offering localized peer support.
+🔒 App Check Security & Attestation: Integrates real-time ReCaptcha Enterprise web attestation and static debug bypasses to block malicious client requests.
+🛡️ Administrative IDP Controls: Interactive Super Admin Console to configure, enable, or disable standard Google, Facebook, and Multi-tenant OAuth providers.
+📜 Configurable Authentication Schemes: Read, modify, and direct deploy 'firebase.json' auth configurations instantly in the console.
+⚙️ Cloud Functions Triggers: Simulated live execution logging for background welcomes, purges, and blocking v2 registration safety filters.
+🌐 Customs Auth Domains & DNS: SPF, DKIM, and actions redirect verifying to validate secure custom transactional email senders.
+🚇 Real-time Spokane Transit: Live STA arrivals feed parsing GTFS streams with responsive sandbox route simulation fallbacks.
+📍 Somatic Database Logs: Client-side healing tracking with automatic Firestore-to-localStorage offline resilience backups.
+
+Experience these cutting-edge features in action now at:
+🔗 ${window.location.origin}
+
+#RecoveryHub #TraumaInformed #AppCheck #GoogleCloud #SpokaneRecovery #SoberSpokane #MentalHealthNetwork #FirebaseAdmin #TechForGood #PWAAward`}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3 py-1">
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`📈 Huge milestone for Spokane peer support! myRecovery Spokane has launched "High Thinking Mode" with persistent Firestore wellness maps & deep reasoning diagnostics to elevate trauma-informed care. Check it out at ${window.location.origin}`)}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`🚀 BIG UPDATE: Today's High-Fidelity Features in myRecovery Spokane! 🚀\n\nExperience these cutting-edge trauma-informed AI recovery features & GCIP identity modules in action now at:\n🔗 ${window.location.origin}\n\n#RecoveryHub #SoberSpokane #TechForGood`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 p-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer text-center select-none"
@@ -247,7 +263,7 @@ export const AISupportView: React.FC<AISupportViewProps> = ({ currentUser, moodL
               </button>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(`📈 Huge milestone for Spokane peer support! myRecovery Spokane has launched "High Thinking Mode" with persistent Firestore wellness maps & deep reasoning diagnostics to elevate trauma-informed care. Check it out at ${window.location.origin}`);
+                  navigator.clipboard.writeText(`🚀 BIG UPDATE: Today's High-Fidelity Features in myRecovery Spokane! 🚀\n\nWe've deployed a massive update combining state-of-the-art trauma-informed AI support with secure, admin-level cloud identity & telemetry:\n\n🧠 "High Thinking Mode" Active: Trauma-informed AI systematically reflects using clinical-grade recovery guidelines before offering localized peer support.\n🔒 App Check Security & Attestation: Integrates real-time ReCaptcha Enterprise web attestation and static debug bypasses to block malicious client requests.\n🛡️ Administrative IDP Controls: Interactive Super Admin Console to configure, enable, or disable standard Google, Facebook, and Multi-tenant OAuth providers.\n📜 Configurable Authentication Schemes: Read, modify, and direct deploy 'firebase.json' auth configurations instantly in the console.\n⚙️ Cloud Functions Triggers: Simulated live execution logging for background welcomes, purges, and blocking v2 registration safety filters.\n🌐 Customs Auth Domains & DNS: SPF, DKIM, and actions redirect verifying to validate secure custom transactional email senders.\n🚇 Real-time Spokane Transit: Live STA arrivals feed parsing GTFS streams with responsive sandbox route simulation fallbacks.\n📍 Somatic Database Logs: Client-side healing tracking with automatic Firestore-to-localStorage offline resilience backups.\n\nExperience these cutting-edge features in action now at:\n🔗 ${window.location.origin}\n\n#RecoveryHub #TraumaInformed #AppCheck #GoogleCloud #SpokaneRecovery #SoberSpokane #MentalHealthNetwork #FirebaseAdmin #TechForGood #PWAAward`);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}

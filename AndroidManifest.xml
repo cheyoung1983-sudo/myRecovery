@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.myrecovery.app">
+
+    <application
+        android:allowBackup="true"
+        android:label="myRecovery"
+        android:supportsRtl="true">
+        
+        <!-- Google AdMob Application ID Configuration -->
+        <meta-data 
+            android:name="com.google.android.gms.ads.APPLICATION_ID" 
+            android:value="ca-app-pub-7510685978539466~3542343117"/>
+            
+    </application>
+
+</manifest>

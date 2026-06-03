@@ -1,0 +1,63 @@
+<svg 
+  width="512" 
+  height="512" 
+  viewBox="0 0 120 120" 
+  fill="none" 
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    {/* Gradients */}
+    <linearGradient id="indigoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#4f46e5" />
+      <stop offset="100%" stopColor="#6366f1" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#059669" />
+      <stop offset="100%" stopColor="#10b981" />
+    </linearGradient>
+    <linearGradient id="slateGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#334155" />
+      <stop offset="100%" stopColor="#475569" />
+    </linearGradient>
+    
+    {/* Soft Drop Shadow for premium depth and trauma-informed tone */}
+    <filter id="gentleGlow" x="-10%" y="-10%" width="120%" height="120%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#10b981" floodOpacity="0.2" />
+      <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#4f46e5" floodOpacity="0.15" />
+    </filter>
+  </defs>
+
+  {/* Outer Protective Cradle (Slate & Charcoal Arc representing stable, safe, and structured support) */}
+  <path 
+    d="M20 60C20 85 40 105 60 105C80 105 100 85 100 60C100 52 98 44 94 38C91 34 85 36 84 41C86 47 87 53 87 60C87 78 75 92 60 92C45 92 33 78 33 60C33 46 41 33 54 29C59 27 58 20 53 21C34 26 20 41 20 60Z" 
+    fill="url(#slateGrad)" 
+    opacity="0.85"
+  />
+  
+  {/* Inner Supportive Arc (Indigo symbolizing deep clinical trust and calming thoughts) */}
+  <path 
+    d="M26 60C26 79 41 94 60 94C79 94 94 79 94 60C94 54 92 48 89 43C87 40 82 42 81 46C83 50 84 55 84 60C84 73 73 84 60 84C47 84 36 73 36 60C36 49 43 39 52 35C56 34 55 28 51 29C36 33 26 45 26 60Z" 
+    fill="url(#indigoGrad)" 
+  />
+
+  {/* Central Rising Leaf Sprout - Left (Emerald representing trauma restoration and physiological healing) */}
+  <path 
+    d="M60 90C60 90 42 72 42 52C42 40 51 32 60 32C60 32 60 40 60 52C60 72 60 90 60 90Z" 
+    fill="url(#emeraldGrad)" 
+    filter="url(#gentleGlow)"
+  />
+
+  {/* Central Rising Leaf Sprout - Right (Emerald representing life continuation, hope, and emotional growth) */}
+  <path 
+    d="M60 90C60 90 78 72 78 52C78 40 69 32 60 32C60 32 60 40 60 52C60 72 60 90 60 90Z" 
+    fill="url(#emeraldGrad)" 
+    opacity="0.95"
+    filter="url(#gentleGlow)"
+  />
+
+  {/* Centered Node of Consilience/Integration (Interlinked Light Core) */}
+  <circle cx="60" cy="52" r="5" fill="#e0e7ff" />
+  
+  {/* Guidance Spark at the Top tip (Vibrant green/indigo shimmer of motivation) */}
+  <path d="M60 16L62.5 22L68 24.5L62.5 27L60 33L57.5 27L52 24.5L57.5 22Z" fill="#34d399" />
+</svg>

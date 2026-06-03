@@ -210,6 +210,10 @@ self.addEventListener('fetch', (event) => {
         console.warn('[Service Worker Auth] ID Token fetch failure, continuing without token:', err);
         return requestProcessor(null);
       })
+      .catch((err) => {
+        console.error('[Service Worker Auth] Fetch processing failed altogether, falling back to network:', err);
+        return fetch(event.request);
+      })
   );
 });
 
